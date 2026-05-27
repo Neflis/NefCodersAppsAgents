@@ -6,7 +6,7 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import Message
+from multi_agent_lab.core.message import Message, MessageType
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task import Task
 from multi_agent_lab.core.task_queue import TaskQueue
@@ -30,16 +30,22 @@ class PlannerAgent(BaseAgent):
     async def create_example_task(self) -> Task:
         """Create a sample task and notify the coder agent."""
         task = Task(
-            title="Crear funcion de saludo",
-            description="Simular la creacion de una funcion Python que saluda por nombre.",
+            title="Generar README.md para una app de ejemplo",
+            description="Crear un README breve para una aplicacion de ejemplo.",
+            payload={"path": "README.md", "format": "markdown"},
             priority=1,
         )
         await self.task_queue.put(task)
-        logger.info("Tarea creada: %s", task.title)
+        logger.info("Tarea creada: %s path=%s", task.title, task.payload["path"])
         await self._log_event("task_created", {"task_id": task.id, "title": task.title})
-        await self.publish("coder", "task.created", {"task_id": task.id})
+        await self.publish("coder", MessageType.TASK_CREATED, {"task_id": task.id})
         return task
 
     async def handle_message(self, message: Message) -> None:
         """Handle planner messages."""
-        logger.info("Mensaje recibido de %s: %s", message.sender, message.type)
+        logger.info(
+            "Mensaje recibido de %s: %s content=%s",
+            message.sender,
+            message.type,
+            message.content,
+        )

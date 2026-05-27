@@ -14,7 +14,9 @@ from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.sqlite_store import SQLiteStore
 from multi_agent_lab.core.task_queue import TaskQueue
+from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.llm.ollama_client import OllamaClient
+from multi_agent_lab.tools.file_tool import FileTool
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,8 @@ async def run_demo(mode: str = "demo_mock") -> None:
     event_logger = AgentEventLogger(store)
     bus = MessageBus(store)
     task_queue = TaskQueue(store)
+    workspace = WorkspaceManager("workspace")
+    file_tool = FileTool(workspace)
 
     ollama_client = OllamaClient(settings.ollama_base_url, settings.ollama_model)
     use_ollama = mode == "demo_ollama"
@@ -35,7 +39,7 @@ async def run_demo(mode: str = "demo_mock") -> None:
 
     planner = PlannerAgent("planner", bus, task_queue, event_logger)
     coder = CoderAgent("coder", bus, task_queue, event_logger, ollama_client, use_ollama)
-    reviewer = ReviewerAgent("reviewer", bus, event_logger)
+    reviewer = ReviewerAgent("reviewer", bus, event_logger, file_tool)
     agents = [planner, coder, reviewer]
 
     try:
@@ -64,7 +68,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Run the command-line entrypoint."""
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+    )
     args = parse_args()
     asyncio.run(run_demo(args.mode))
 

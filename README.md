@@ -13,8 +13,9 @@ La fase 2 demuestra comunicacion multiagente asincrona con persistencia local y 
 - Logger de eventos de agentes.
 - Configuracion mediante `.env`.
 - Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
+- Workspace seguro en `./workspace/` para operaciones controladas de archivos.
 
-No se escriben archivos generados por agentes, no se ejecutan comandos del sistema y no se usa Docker.
+No se ejecutan comandos del sistema, no se usa Docker y no se permite borrado de archivos.
 
 ## Requisitos
 
@@ -52,7 +53,13 @@ DATABASE_URL=sqlite:///multi_agent_lab.db
 python -m multi_agent_lab.main --mode demo_mock
 ```
 
-Este modo no llama a Ollama. El planner crea una tarea, el coder devuelve una respuesta local simulada y el reviewer publica una revision.
+Este modo no llama a Ollama. El flujo genera un `README.md` de ejemplo dentro de `./workspace/`:
+
+```text
+Planner -> Coder -> Reviewer -> FileTool
+```
+
+El planner crea una tarea de archivo, el coder genera contenido local simulado, el reviewer valida la propuesta y `FileTool` escribe el archivo solo si la ruta es segura.
 
 ## Ejecutar demo con Ollama
 
@@ -61,6 +68,27 @@ python -m multi_agent_lab.main --mode demo_ollama
 ```
 
 Este modo comprueba si Ollama responde en `OLLAMA_BASE_URL`. Si esta disponible, el coder usa el modelo configurado en `OLLAMA_MODEL`. Si no esta disponible, la demo continua con respuesta local simulada.
+
+## Workspace seguro
+
+Todas las operaciones de archivos estan limitadas a:
+
+```text
+./workspace/
+```
+
+La capa de seguridad esta separada en dos piezas:
+
+- `WorkspaceManager`: crea el workspace, resuelve rutas absolutas seguras e impide path traversal, rutas absolutas externas y segmentos peligrosos como `.git` o `.env`.
+- `FileTool`: permite `read_file`, `write_file`, `append_file` y `list_files` solo sobre rutas validadas por `WorkspaceManager`.
+
+Limites actuales:
+
+- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`.
+- Tamano maximo por archivo: 64 KiB.
+- No hay borrado de archivos.
+- No hay ejecucion de comandos.
+- No hay acceso libre al sistema de archivos.
 
 ## Ejecutar tests
 
@@ -75,7 +103,8 @@ src/multi_agent_lab/
   core/       Modelos, bus de mensajes, tareas, cola, SQLite y eventos.
   agents/     Agentes asincronos.
   llm/        Cliente Ollama.
-  tools/      Espacio reservado para herramientas futuras.
+  tools/      Herramientas seguras restringidas al workspace.
   config/     Configuracion local.
 tests/        Tests basicos y de persistencia.
+workspace/    Archivos generados por demos o agentes, ignorados por Git.
 ```

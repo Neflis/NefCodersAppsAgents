@@ -41,6 +41,7 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+workspace/
 
 # IDE and OS files
 .idea/

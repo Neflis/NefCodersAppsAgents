@@ -6,7 +6,7 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import Message
+from multi_agent_lab.core.message import Message, MessageType
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task import TaskStatus
 from multi_agent_lab.core.task_queue import TaskQueue
@@ -34,15 +34,16 @@ class CoderAgent(BaseAgent):
 
     async def handle_message(self, message: Message) -> None:
         """Process task messages and publish a code response."""
-        if message.type != "task.created":
+        if message.type != MessageType.TASK_CREATED:
             logger.info("Mensaje ignorado: %s", message.type)
             return
 
         task = await self.task_queue.get()
         await self.task_queue.update_status(task, TaskStatus.IN_PROGRESS)
-        logger.info("Procesando tarea: %s", task.title)
+        target_path = str(task.payload.get("path", "README.md"))
+        logger.info("Procesando tarea: %s path=%s", task.title, target_path)
 
-        result = "def greet(name: str) -> str: return f'Hola, {name}'"
+        result = self._mock_file_content(task.title)
         if self.use_ollama and self.ollama_client is not None:
             try:
                 result = await self.ollama_client.generate(task.description)
@@ -52,10 +53,30 @@ class CoderAgent(BaseAgent):
         response = {
             "task_id": task.id,
             "title": task.title,
-            "result": result,
+            "path": target_path,
+            "content": result,
         }
         await self.task_queue.update_status(task, TaskStatus.DONE)
         await self._log_event("task_completed", {"task_id": task.id, "title": task.title})
         self.task_queue.task_done()
 
-        await self.publish("reviewer", "code.simulated", response)
+        await self.publish("reviewer", MessageType.FILE_WRITE_REQUEST, response)
+
+    def _mock_file_content(self, title: str) -> str:
+        """Return deterministic README content for the demo."""
+        return "\n".join(
+            [
+                "# App de ejemplo",
+                "",
+                "Proyecto generado por el laboratorio multiagente local.",
+                "",
+                "## Objetivo",
+                "",
+                title,
+                "",
+                "## Uso",
+                "",
+                "Describe aqui como ejecutar la app cuando exista implementacion.",
+                "",
+            ]
+        )
