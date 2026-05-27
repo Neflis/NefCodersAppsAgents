@@ -22,7 +22,6 @@ No se escriben archivos generados por agentes, no se ejecutan comandos del siste
 ## Instalación
 
 ```powershell
-cd multi-agent-lab
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
