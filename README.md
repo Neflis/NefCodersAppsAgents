@@ -1,16 +1,18 @@
 # Multi Agent Lab
 
-Sistema multiagente local y asíncrono en Python, preparado para crecer hacia una integración con Ollama sin depender de APIs externas ni frameworks de agentes.
+Sistema multiagente local y asincrono en Python, preparado para crecer hacia una integracion con Ollama sin depender de APIs externas ni frameworks de agentes.
 
-## Objetivo de esta fase
+## Objetivo actual
 
-Esta primera fase solo demuestra comunicación multiagente asíncrona:
+La fase 2 demuestra comunicacion multiagente asincrona con persistencia local y trazabilidad:
 
 - Bus de mensajes con `asyncio`.
-- Cola de tareas básica.
+- Persistencia SQLite para `messages`, `tasks` y `agent_events`.
+- Cola de tareas con cambios de estado persistidos.
 - Tres agentes locales: planner, coder y reviewer.
-- Cliente de Ollama preparado como interfaz futura, sin llamadas reales obligatorias.
-- Tests básicos para el bus y la cola.
+- Logger de eventos de agentes.
+- Configuracion mediante `.env`.
+- Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
 
 No se escriben archivos generados por agentes, no se ejecutan comandos del sistema y no se usa Docker.
 
@@ -18,8 +20,9 @@ No se escriben archivos generados por agentes, no se ejecutan comandos del siste
 
 - Python 3.11 o superior.
 - Entorno local con `pytest` para ejecutar tests.
+- Ollama local solo si quieres usar `demo_ollama`.
 
-## Instalación
+## Instalacion
 
 ```powershell
 python -m venv .venv
@@ -27,13 +30,37 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-## Ejecutar la demo
+## Configuracion
+
+Copia `.env.example` a `.env` y ajusta los valores si lo necesitas:
 
 ```powershell
-python -m multi_agent_lab.main
+Copy-Item .env.example .env
 ```
 
-La demo arranca un planner, un coder y un reviewer. El planner crea una tarea de ejemplo, el coder devuelve una respuesta simulada y el reviewer publica una revisión simulada.
+Variables disponibles:
+
+```text
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+DATABASE_URL=sqlite:///multi_agent_lab.db
+```
+
+## Ejecutar demo sin Ollama
+
+```powershell
+python -m multi_agent_lab.main --mode demo_mock
+```
+
+Este modo no llama a Ollama. El planner crea una tarea, el coder devuelve una respuesta local simulada y el reviewer publica una revision.
+
+## Ejecutar demo con Ollama
+
+```powershell
+python -m multi_agent_lab.main --mode demo_ollama
+```
+
+Este modo comprueba si Ollama responde en `OLLAMA_BASE_URL`. Si esta disponible, el coder usa el modelo configurado en `OLLAMA_MODEL`. Si no esta disponible, la demo continua con respuesta local simulada.
 
 ## Ejecutar tests
 
@@ -45,9 +72,10 @@ pytest
 
 ```text
 src/multi_agent_lab/
-  core/       Modelos, bus de mensajes, tareas, cola y memoria simple.
-  agents/     Agentes asíncronos.
-  llm/        Cliente preparado para Ollama.
+  core/       Modelos, bus de mensajes, tareas, cola, SQLite y eventos.
+  agents/     Agentes asincronos.
+  llm/        Cliente Ollama.
   tools/      Espacio reservado para herramientas futuras.
-  config/     Configuración local.
+  config/     Configuracion local.
+tests/        Tests basicos y de persistencia.
 ```

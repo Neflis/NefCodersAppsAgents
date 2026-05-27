@@ -17,6 +17,6 @@ class ReviewerAgent(BaseAgent):
         review = {
             "task_id": content["task_id"],
             "approved": True,
-            "notes": "Respuesta simulada aceptada para la demo asíncrona.",
+            "notes": "Respuesta simulada aceptada para la demo asincrona.",
         }
         await self.publish("planner", "review.completed", review)
