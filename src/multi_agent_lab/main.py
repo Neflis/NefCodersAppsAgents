@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 
 from multi_agent_lab.agents.coder_agent import CoderAgent
 from multi_agent_lab.agents.planner_agent import PlannerAgent
@@ -15,8 +16,11 @@ from multi_agent_lab.core.sqlite_store import SQLiteStore
 from multi_agent_lab.core.task_queue import TaskQueue
 from multi_agent_lab.llm.ollama_client import OllamaClient
 
+logger = logging.getLogger(__name__)
+
 
 async def run_demo(mode: str = "demo_mock") -> None:
+    """Run the local multi-agent demo."""
     settings = load_settings()
     store = SQLiteStore(settings.database_url)
     event_logger = AgentEventLogger(store)
@@ -26,7 +30,7 @@ async def run_demo(mode: str = "demo_mock") -> None:
     ollama_client = OllamaClient(settings.ollama_base_url, settings.ollama_model)
     use_ollama = mode == "demo_ollama"
     if use_ollama and not await ollama_client.health_check():
-        print("[main] Ollama no disponible; se usara respuesta local simulada.")
+        logger.info("Ollama no disponible; se usara respuesta local simulada.")
         use_ollama = False
 
     planner = PlannerAgent("planner", bus, task_queue, event_logger)
@@ -47,6 +51,7 @@ async def run_demo(mode: str = "demo_mock") -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Run the async multi-agent demo.")
     parser.add_argument(
         "--mode",
@@ -58,6 +63,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run the command-line entrypoint."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     args = parse_args()
     asyncio.run(run_demo(args.mode))
 

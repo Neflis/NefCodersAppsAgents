@@ -13,6 +13,7 @@ from multi_agent_lab.core.task import Task, TaskStatus
 
 
 def database_path_from_url(database_url: str) -> str:
+    """Convert a SQLite URL into a filesystem path."""
     if database_url == ":memory:":
         return database_url
 
@@ -26,6 +27,8 @@ def database_path_from_url(database_url: str) -> str:
 
 
 class SQLiteStore:
+    """Small SQLite-backed persistence store."""
+
     def __init__(self, database_url: str = "sqlite:///multi_agent_lab.db") -> None:
         self.database_url = database_url
         self.database_path = database_path_from_url(database_url)
@@ -37,8 +40,8 @@ class SQLiteStore:
         self.initialize()
 
     def initialize(self) -> None:
-        self._connection.executescript(
-            """
+        """Create persistence tables if they do not already exist."""
+        self._connection.executescript("""
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
                 sender TEXT NOT NULL,
@@ -67,11 +70,11 @@ class SQLiteStore:
                 details TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
-            """
-        )
+            """)
         self._connection.commit()
 
     def save_message(self, message: Message) -> None:
+        """Persist a message."""
         self._connection.execute(
             """
             INSERT OR REPLACE INTO messages
@@ -91,6 +94,7 @@ class SQLiteStore:
         self._connection.commit()
 
     def save_task(self, task: Task) -> None:
+        """Persist a task."""
         self._connection.execute(
             """
             INSERT OR REPLACE INTO tasks
@@ -110,13 +114,17 @@ class SQLiteStore:
         self._connection.commit()
 
     def update_task_status(self, task_id: str, status: TaskStatus) -> None:
+        """Persist a task status change."""
         self._connection.execute(
             "UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (status.value, task_id),
         )
         self._connection.commit()
 
-    def save_agent_event(self, agent: str, event_type: str, details: dict[str, Any] | None = None) -> None:
+    def save_agent_event(
+        self, agent: str, event_type: str, details: dict[str, Any] | None = None
+    ) -> None:
+        """Persist an agent lifecycle or processing event."""
         self._connection.execute(
             """
             INSERT INTO agent_events (agent, event_type, details, created_at)
@@ -127,10 +135,12 @@ class SQLiteStore:
         self._connection.commit()
 
     def fetch_all(self, table: str) -> list[sqlite3.Row]:
+        """Fetch all rows from one supported table."""
         if table not in {"messages", "tasks", "agent_events"}:
             raise ValueError(f"Unsupported table: {table}")
         cursor = self._connection.execute(f"SELECT * FROM {table}")
         return list(cursor.fetchall())
 
     def close(self) -> None:
+        """Close the database connection."""
         self._connection.close()

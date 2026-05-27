@@ -13,7 +13,9 @@ def make_store(tmp_path) -> SQLiteStore:
 async def test_message_bus_persists_published_messages(tmp_path) -> None:
     store = make_store(tmp_path)
     bus = MessageBus(store)
-    message = Message(sender="planner", receiver="coder", type="task.created", content={"task_id": "1"})
+    message = Message(
+        sender="planner", receiver="coder", type="task.created", content={"task_id": "1"}
+    )
 
     await bus.publish(message)
 
