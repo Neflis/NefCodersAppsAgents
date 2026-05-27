@@ -3,14 +3,18 @@ from pathlib import Path
 import pytest
 
 from multi_agent_lab.core.workspace_manager import WorkspaceManager, WorkspaceSecurityError
-from multi_agent_lab.tools.file_tool import FileTool, FileToolError
+from multi_agent_lab.tools.file_tool import (
+    FileTool,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+)
 
 
-def test_workspace_manager_blocks_path_traversal(tmp_path: Path) -> None:
+def test_workspace_manager_blocks_parent_traversal(tmp_path: Path) -> None:
     manager = WorkspaceManager(tmp_path / "workspace")
 
     with pytest.raises(WorkspaceSecurityError):
-        manager.resolve_safe_path("../outside.md")
+        manager.resolve_safe_path("../../secret.txt")
 
 
 def test_workspace_manager_blocks_absolute_paths(tmp_path: Path) -> None:
@@ -23,26 +27,46 @@ def test_workspace_manager_blocks_absolute_paths(tmp_path: Path) -> None:
 def test_file_tool_writes_and_reads_allowed_file(tmp_path: Path) -> None:
     tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
 
-    written_path = tool.write_file("docs/example.md", "# Example\n")
-    content = tool.read_file("docs/example.md")
+    written_path = tool.write_file("README.md", "# Example\n")
+    content = tool.read_file("README.md")
 
-    assert written_path == "docs/example.md"
+    assert written_path == "README.md"
     assert content == "# Example\n"
-    assert (tmp_path / "workspace" / "docs" / "example.md").exists()
+    assert tool.exists("README.md")
+    assert (tmp_path / "workspace" / "README.md").exists()
+
+
+def test_file_tool_appends_allowed_file(tmp_path: Path) -> None:
+    tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
+
+    tool.write_file("notes.txt", "hello")
+    tool.append_file("notes.txt", " world")
+
+    assert tool.read_file("notes.txt") == "hello world"
+
+
+def test_file_tool_allows_yaml_files(tmp_path: Path) -> None:
+    tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
+
+    tool.write_file("config.yaml", "name: demo\n")
+    tool.write_file("config.yml", "name: demo\n")
+
+    assert tool.exists("config.yaml")
+    assert tool.exists("config.yml")
 
 
 def test_file_tool_blocks_disallowed_extension(tmp_path: Path) -> None:
     tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
 
-    with pytest.raises(FileToolError):
+    with pytest.raises(UnsupportedFileTypeError):
         tool.write_file("secret.exe", "blocked")
 
 
 def test_file_tool_blocks_large_content(tmp_path: Path) -> None:
-    tool = FileTool(WorkspaceManager(tmp_path / "workspace"), max_file_size_bytes=4)
+    tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
 
-    with pytest.raises(FileToolError):
-        tool.write_file("large.txt", "too large")
+    with pytest.raises(FileTooLargeError):
+        tool.write_file("large.txt", "x" * (1024 * 1024 + 1))
 
 
 def test_file_tool_lists_allowed_files(tmp_path: Path) -> None:

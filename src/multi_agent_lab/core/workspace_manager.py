@@ -16,12 +16,17 @@ class WorkspaceManager:
 
     def __init__(self, root: str | Path = "workspace") -> None:
         self.root = Path(root).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.create_workspace()
 
-    def resolve_safe_path(self, path: str | Path) -> Path:
-        """Return an absolute path guaranteed to be inside the workspace."""
-        raw_path = Path(path)
-        path_text = str(path)
+    def create_workspace(self) -> Path:
+        """Create the workspace root if it does not exist."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        return self.root
+
+    def validate_path(self, relative_path: str | Path) -> None:
+        """Raise if a relative path is unsafe for workspace access."""
+        raw_path = Path(relative_path)
+        path_text = str(relative_path)
         if "\x00" in path_text:
             raise WorkspaceSecurityError("Path contains a null byte.")
         if raw_path.is_absolute():
@@ -34,8 +39,13 @@ class WorkspaceManager:
         resolved = (self.root / raw_path).resolve()
         if resolved != self.root and self.root not in resolved.parents:
             raise WorkspaceSecurityError("Resolved path escapes the workspace.")
+
+    def resolve_safe_path(self, relative_path: str | Path) -> Path:
+        """Return an absolute path guaranteed to be inside the workspace."""
+        self.validate_path(relative_path)
+        resolved = (self.root / Path(relative_path)).resolve()
         return resolved
 
-    def relative_to_workspace(self, path: str | Path) -> str:
+    def relative_to_workspace(self, relative_path: str | Path) -> str:
         """Return a safe workspace-relative path."""
-        return self.resolve_safe_path(path).relative_to(self.root).as_posix()
+        return self.resolve_safe_path(relative_path).relative_to(self.root).as_posix()

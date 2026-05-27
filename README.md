@@ -80,12 +80,12 @@ Todas las operaciones de archivos estan limitadas a:
 La capa de seguridad esta separada en dos piezas:
 
 - `WorkspaceManager`: crea el workspace, resuelve rutas absolutas seguras e impide path traversal, rutas absolutas externas y segmentos peligrosos como `.git` o `.env`.
-- `FileTool`: permite `read_file`, `write_file`, `append_file` y `list_files` solo sobre rutas validadas por `WorkspaceManager`.
+- `FileTool`: permite `read_file`, `write_file`, `append_file`, `list_files` y `exists` solo sobre rutas validadas por `WorkspaceManager`.
 
 Limites actuales:
 
-- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`.
-- Tamano maximo por archivo: 64 KiB.
+- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`.
+- Tamano maximo por archivo: 1 MB.
 - No hay borrado de archivos.
 - No hay ejecucion de comandos.
 - No hay acceso libre al sistema de archivos.

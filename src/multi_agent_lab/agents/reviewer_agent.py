@@ -75,4 +75,4 @@ class ReviewerAgent(BaseAgent):
 
     def _is_valid_content(self, content: str) -> bool:
         """Validate generated content before file writing."""
-        return bool(content.strip()) and len(content.encode("utf-8")) <= 64 * 1024
+        return bool(content.strip()) and len(content.encode("utf-8")) <= 1024 * 1024
