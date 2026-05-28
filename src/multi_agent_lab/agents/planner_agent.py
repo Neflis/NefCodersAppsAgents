@@ -85,6 +85,9 @@ class PlannerAgent(BaseAgent):
     ) -> TaskGraph:
         """Create the README demo graph."""
         graph = TaskGraph(Goal(goal_title, correlation_id))
+        if self._is_flask_api_goal(goal_title):
+            return self._build_flask_api_graph(graph)
+
         task_specs = (
             decision.content
             if decision is not None and isinstance(decision.content, list)
@@ -133,6 +136,77 @@ class PlannerAgent(BaseAgent):
             )
         )
         return graph
+
+    def _build_flask_api_graph(self, graph: TaskGraph) -> TaskGraph:
+        """Create a multi-file Flask TODO API graph."""
+        design = graph.add_task(
+            TaskNode(
+                title="Disenar estructura API Flask TODO",
+                description="Definir archivos y coherencia del proyecto.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "README.md", "artifact": "design"},
+                priority=12,
+            )
+        )
+        requirements = graph.add_task(
+            TaskNode(
+                title="Crear requirements.txt",
+                description="Declarar dependencias de la API Flask TODO.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "requirements.txt", "artifact": "requirements"},
+                dependencies={design.id},
+                priority=10,
+            )
+        )
+        app = graph.add_task(
+            TaskNode(
+                title="Crear app.py",
+                description="Implementar una pequena API Flask TODO sin ejecutarla.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "app.py", "artifact": "flask_app"},
+                dependencies={requirements.id},
+                priority=9,
+            )
+        )
+        readme = graph.add_task(
+            TaskNode(
+                title="Crear README.md",
+                description="Documentar la API Flask TODO creada.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "README.md", "artifact": "readme"},
+                dependencies={app.id},
+                priority=8,
+            )
+        )
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar coherencia final del proyecto",
+                description="Validar coherencia entre app.py, requirements.txt y README.md.",
+                required_capability=Capability.REVIEWING.value,
+                payload={
+                    "project_review": True,
+                    "paths": ["app.py", "requirements.txt", "README.md"],
+                },
+                dependencies={readme.id},
+                priority=6,
+            )
+        )
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia de archivos",
+                description="Comprobar que los archivos finales existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={"paths": ["app.py", "requirements.txt", "README.md"]},
+                dependencies={review.id},
+                priority=4,
+            )
+        )
+        return graph
+
+    def _is_flask_api_goal(self, goal_title: str) -> bool:
+        """Return whether a goal asks for a Flask API project."""
+        lowered = goal_title.lower()
+        return "flask" in lowered and "api" in lowered
 
     def _build_graph_from_specs(
         self,

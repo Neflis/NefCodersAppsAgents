@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class FileAgent(BaseAgent):
     """Agent that claims file write tasks and uses FileTool."""
 
-    subscribed_events = (EventType.TASK_READY,)
+    subscribed_events = (EventType.TASK_READY, EventType.CODE_PROPOSED)
     capabilities = (Capability.FILE_WRITE.value,)
 
     def __init__(
@@ -35,6 +35,9 @@ class FileAgent(BaseAgent):
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible file tasks and write approved content."""
+        if message.type == EventType.CODE_PROPOSED:
+            await self._write_proposed_file(message)
+            return
         if not self.can_claim(message):
             return
         await self.claim_task(message)
@@ -48,10 +51,11 @@ class FileAgent(BaseAgent):
                 message.content.get("payload", {}).get("path", "README.md"),
             )
         )
+        content = str(approved.get("content", ""))
         logger.info("Escribiendo archivo task_id=%s path=%s", message.content["task_id"], path)
         try:
-            written_path = self.file_tool.write_file(path, str(approved["content"]))
-        except (KeyError, FileToolError) as error:
+            written_path = self.file_tool.write_file(path, content)
+        except FileToolError as error:
             await self.publish(
                 EventType.FILE_WRITE_FAILED,
                 {"task_id": message.content["task_id"], "path": path, "error": str(error)},
@@ -73,5 +77,24 @@ class FileAgent(BaseAgent):
         await self.publish(
             EventType.TASK_COMPLETED,
             {"task_id": message.content["task_id"], "result": result, "owner": self.name},
+            source=message,
+        )
+
+    async def _write_proposed_file(self, message: Message) -> None:
+        """Write a proposed file emitted by a coding task."""
+        path = str(message.content["path"])
+        logger.info("Escribiendo propuesta path=%s", path)
+        try:
+            written_path = self.file_tool.write_file(path, str(message.content["content"]))
+        except FileToolError as error:
+            await self.publish(
+                EventType.FILE_WRITE_FAILED,
+                {"task_id": message.content["task_id"], "path": path, "error": str(error)},
+                source=message,
+            )
+            return
+        await self.publish(
+            EventType.FILE_WRITTEN,
+            {"task_id": message.content["task_id"], "path": written_path},
             source=message,
         )

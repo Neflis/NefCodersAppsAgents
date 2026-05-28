@@ -42,6 +42,7 @@ class CoderAgent(BaseAgent):
         await self.claim_task(message)
 
         target_path = str(message.content.get("payload", {}).get("path", "README.md"))
+        artifact = str(message.content.get("payload", {}).get("artifact", "readme"))
         title = str(message.content.get("title", "Crear borrador README"))
         logger.info(
             "Generando borrador task_id=%s path=%s",
@@ -53,15 +54,16 @@ class CoderAgent(BaseAgent):
         proposed_content = (
             str(decision.content)
             if decision is not None and isinstance(decision.content, str)
-            else self._mock_file_content(title)
+            else self._mock_file_content(title, target_path, artifact)
         )
 
         result = {"path": target_path, "content": proposed_content}
-        await self.publish(
-            EventType.CODE_PROPOSED,
-            {"task_id": message.content["task_id"], **result},
-            source=message,
-        )
+        if artifact != "design":
+            await self.publish(
+                EventType.CODE_PROPOSED,
+                {"task_id": message.content["task_id"], **result},
+                source=message,
+            )
         await self.publish(
             EventType.TASK_COMPLETED,
             {"task_id": message.content["task_id"], "result": result, "owner": self.name},
@@ -96,23 +98,55 @@ class CoderAgent(BaseAgent):
             logger.info("Coder LLM JSON invalido; usando contenido determinista: %s", error)
             return None
 
-    def _mock_file_content(self, title: str) -> str:
-        """Return deterministic README content for the TODO demo."""
+    def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
+        """Return deterministic content by artifact type."""
+        if target_path == "requirements.txt":
+            return "Flask>=3.0\n"
+        if target_path == "app.py":
+            return "\n".join(
+                [
+                    "from flask import Flask, jsonify, request",
+                    "",
+                    "app = Flask(__name__)",
+                    "todos = []",
+                    "",
+                    "",
+                    "@app.get('/todos')",
+                    "def list_todos():",
+                    "    return jsonify(todos)",
+                    "",
+                    "",
+                    "@app.post('/todos')",
+                    "def create_todo():",
+                    "    data = request.get_json(silent=True) or {}",
+                    "    todo = {'id': len(todos) + 1, 'title': data.get('title', '')}",
+                    "    todos.append(todo)",
+                    "    return jsonify(todo), 201",
+                    "",
+                    "",
+                    "if __name__ == '__main__':",
+                    "    app.run(debug=True)",
+                    "",
+                ]
+            )
+        if artifact == "design":
+            return "Estructura: app.py, requirements.txt y README.md para API Flask TODO."
         return "\n".join(
             [
-                "# TODO App",
+                "# Flask TODO API",
                 "",
-                "Documentacion inicial para una pequena aplicacion TODO.",
+                "Pequena API Flask para gestionar tareas TODO.",
                 "",
-                "## Objetivo",
+                "## Archivos",
                 "",
-                title,
+                "- `app.py`: API con endpoints `GET /todos` y `POST /todos`.",
+                "- `requirements.txt`: dependencia Flask.",
                 "",
-                "## Funcionalidades previstas",
+                "## Uso",
                 "",
-                "- Crear tareas",
-                "- Marcar tareas como completadas",
-                "- Listar tareas pendientes",
+                "Instala dependencias y ejecuta `app.py` en un entorno local controlado.",
+                "",
+                f"Generado para: {title}",
                 "",
             ]
         )

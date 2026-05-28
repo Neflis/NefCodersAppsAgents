@@ -17,6 +17,7 @@ from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent
 from multi_agent_lab.config.settings import Settings, load_settings
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
+from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.sqlite_store import SQLiteStore
@@ -73,8 +74,16 @@ class AgentRuntime:
         graph_store = TaskGraphStore(store)
         workspace = WorkspaceManager(self.workspace_path)
         file_tool = FileTool(workspace)
-        context_builder = AgentContextBuilder(graph_store, file_tool)
-        agents = self._build_agents(bus, graph_store, file_tool, event_logger, context_builder)
+        file_awareness = FileAwarenessService(file_tool)
+        context_builder = AgentContextBuilder(graph_store, file_tool, file_awareness)
+        agents = self._build_agents(
+            bus,
+            graph_store,
+            file_tool,
+            file_awareness,
+            event_logger,
+            context_builder,
+        )
 
         terminal_inbox = await bus.subscribe_many(
             (EventType.TEST_PASSED, EventType.WORKFLOW_HALTED, EventType.WORKFLOW_TIMEOUT)
@@ -141,6 +150,7 @@ class AgentRuntime:
         bus: MessageBus,
         graph_store: TaskGraphStore,
         file_tool: FileTool,
+        file_awareness: FileAwarenessService,
         event_logger: AgentEventLogger,
         context_builder: AgentContextBuilder,
     ) -> list[BaseAgent]:
@@ -158,6 +168,7 @@ class AgentRuntime:
                 event_logger,
                 reviewer_llm,
                 context_builder,
+                file_awareness,
             ),
             FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
             TesterAgent("tester", bus, file_tool, event_logger),

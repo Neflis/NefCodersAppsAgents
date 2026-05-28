@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import Message
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.tools.file_tool import FileTool
@@ -17,10 +18,14 @@ class AgentContextBuilder:
         self,
         graph_store: TaskGraphStore | None = None,
         file_tool: FileTool | None = None,
+        file_awareness: FileAwarenessService | None = None,
         recent_events_limit: int = 8,
     ) -> None:
         self.graph_store = graph_store
         self.file_tool = file_tool
+        self.file_awareness = file_awareness or (
+            FileAwarenessService(file_tool) if file_tool is not None else None
+        )
         self.recent_events_limit = recent_events_limit
         self._events_by_correlation: dict[str, list[dict[str, Any]]] = {}
 
@@ -65,10 +70,10 @@ class AgentContextBuilder:
             }
 
         files: dict[str, str] = {}
-        if self.file_tool is not None:
-            for path in workspace_paths or []:
-                if self.file_tool.exists(path):
-                    files[path] = self.file_tool.read_file(path)
+        workspace_tree: dict[str, object] = {"files": []}
+        if self.file_awareness is not None:
+            workspace_tree = self.file_awareness.summarize_workspace()
+            files = self.file_awareness.read_relevant_files(workspace_paths or [])
 
         return {
             "global_goal": message.content.get("goal"),
@@ -80,7 +85,9 @@ class AgentContextBuilder:
             "current_task": current_task,
             "task_graph": graph_summary,
             "recent_events": self._events_by_correlation.get(correlation_id, []),
+            "workspace_tree": workspace_tree,
             "workspace_files": files,
+            "previous_decisions": self._events_by_correlation.get(correlation_id, []),
             "correlation_id": correlation_id,
         }
 

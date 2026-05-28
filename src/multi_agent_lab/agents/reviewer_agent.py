@@ -6,6 +6,7 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.capability import Capability
+from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
@@ -30,17 +31,23 @@ class ReviewerAgent(BaseAgent):
         event_logger=None,
         llm_client: OllamaClient | None = None,
         context_builder: AgentContextBuilder | None = None,
+        file_awareness: FileAwarenessService | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.graph_store = graph_store
         self.llm_client = llm_client
         self.context_builder = context_builder or AgentContextBuilder(graph_store)
+        self.file_awareness = file_awareness
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible review tasks and complete them."""
         if not self.can_claim(message):
             return
         await self.claim_task(message)
+
+        if message.content.get("payload", {}).get("project_review"):
+            await self._review_project(message)
+            return
 
         graph = self.graph_store.get(message.correlation_id or "")
         dependency_results = graph.dependency_results(str(message.content["task_id"]))
@@ -87,6 +94,50 @@ class ReviewerAgent(BaseAgent):
             {"task_id": message.content["task_id"], "result": result, "owner": self.name},
             source=message,
         )
+
+    async def _review_project(self, message: Message) -> None:
+        """Review final multi-file project coherence."""
+        paths = list(message.content.get("payload", {}).get("paths", []))
+        files = self.file_awareness.read_relevant_files(paths) if self.file_awareness else {}
+        feedback = self._project_feedback(files)
+        if feedback:
+            await self.publish(
+                EventType.PROJECT_REVIEW_REJECTED,
+                {"task_id": message.content["task_id"], "feedback": feedback},
+                source=message,
+            )
+            await self.publish(
+                EventType.TASK_FAILED,
+                {"task_id": message.content["task_id"], "error": "; ".join(feedback)},
+                source=message,
+            )
+            return
+
+        result = {"paths": paths, "approved": True}
+        await self.publish(
+            EventType.PROJECT_REVIEW_APPROVED,
+            {"task_id": message.content["task_id"], **result},
+            source=message,
+        )
+        await self.publish(
+            EventType.TASK_COMPLETED,
+            {"task_id": message.content["task_id"], "result": result, "owner": self.name},
+            source=message,
+        )
+
+    def _project_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a multi-file Flask project."""
+        feedback: list[str] = []
+        app = files.get("app.py", "")
+        requirements = files.get("requirements.txt", "")
+        readme = files.get("README.md", "")
+        if "from flask import" in app.lower() and "flask" not in requirements.lower():
+            feedback.append("requirements.txt debe incluir Flask.")
+        if "flask" not in readme.lower() or "todo" not in readme.lower():
+            feedback.append("README.md debe describir la API Flask TODO.")
+        if "GET /todos" not in readme and "/todos" not in readme:
+            feedback.append("README.md debe mencionar los endpoints TODO.")
+        return feedback
 
     def _is_valid_content(self, content: str) -> bool:
         """Validate generated content before approving file writing."""

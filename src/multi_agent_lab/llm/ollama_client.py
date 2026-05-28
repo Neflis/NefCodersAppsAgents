@@ -96,6 +96,15 @@ class OllamaClient:
         if self.mock_responses:
             return self.mock_responses.pop(0)
         if "PlannerAgent" in prompt:
+            if "Flask" in prompt or "flask" in prompt:
+                return {
+                    "action": "decompose_goal",
+                    "reasoning_summary": "Use deterministic Flask graph.",
+                    "confidence": 1.0,
+                    "events_to_publish": [],
+                    "task_updates": [],
+                    "content": None,
+                }
             return {
                 "action": "decompose_goal",
                 "reasoning_summary": "Create the standard README task graph.",
@@ -134,18 +143,40 @@ class OllamaClient:
                 ],
             }
         if "CoderAgent" in prompt:
+            target_path = self._mock_current_task_path(prompt)
+            if target_path == "app.py":
+                content = (
+                    "from flask import Flask, jsonify, request\n\n"
+                    "app = Flask(__name__)\n"
+                    "todos = []\n\n"
+                    "@app.get('/todos')\n"
+                    "def list_todos():\n"
+                    "    return jsonify(todos)\n\n"
+                    "@app.post('/todos')\n"
+                    "def create_todo():\n"
+                    "    data = request.get_json(silent=True) or {}\n"
+                    "    todo = {'id': len(todos) + 1, 'title': data.get('title', '')}\n"
+                    "    todos.append(todo)\n"
+                    "    return jsonify(todo), 201\n"
+                )
+            elif target_path == "requirements.txt":
+                content = "Flask>=3.0\n"
+            elif target_path == "README.md" or "README.md" in prompt:
+                content = (
+                    "# Flask TODO API\n\n"
+                    "Pequena API Flask para gestionar tareas TODO.\n\n"
+                    "## Endpoints\n\n"
+                    "- `GET /todos`\n- `POST /todos`\n"
+                )
+            else:
+                content = "Estructura: app.py, requirements.txt y README.md " "para API Flask TODO."
             return {
                 "action": "generate_content",
                 "reasoning_summary": "Generate README content for the TODO app.",
                 "confidence": 1.0,
                 "events_to_publish": [],
                 "task_updates": [],
-                "content": (
-                    "# TODO App\n\n"
-                    "Documentacion generada en modo mock LLM.\n\n"
-                    "## Funcionalidades\n\n"
-                    "- Crear tareas\n- Completar tareas\n- Listar pendientes\n"
-                ),
+                "content": content,
             }
         if "ReviewerAgent" in prompt:
             return {
@@ -164,3 +195,25 @@ class OllamaClient:
             "task_updates": [],
             "content": {"prompt_excerpt": prompt[:120]},
         }
+
+    def _mock_current_task_path(self, prompt: str) -> str | None:
+        """Extract the active task path from a rendered mock prompt."""
+        try:
+            payload = json.loads(prompt.split("\n", 1)[1])
+        except (IndexError, json.JSONDecodeError):
+            return None
+
+        context = payload.get("input_context", {})
+        if not isinstance(context, dict):
+            return None
+        task = context.get("current_task", {})
+        if not isinstance(task, dict):
+            return None
+        direct_path = task.get("path")
+        if isinstance(direct_path, str):
+            return direct_path
+        task_payload = task.get("payload", {})
+        if not isinstance(task_payload, dict):
+            return None
+        path = task_payload.get("path")
+        return path if isinstance(path, str) else None

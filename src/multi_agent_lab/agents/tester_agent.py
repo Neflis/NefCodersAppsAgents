@@ -28,12 +28,18 @@ class TesterAgent(BaseAgent):
             return
         await self.claim_task(message)
 
-        path = str(message.content.get("payload", {}).get("path", "README.md"))
-        logger.info("Validacion simulada task_id=%s path=%s", message.content["task_id"], path)
-        if not self.file_tool.exists(path):
+        payload = message.content.get("payload", {})
+        paths = list(payload.get("paths", [])) or [str(payload.get("path", "README.md"))]
+        logger.info("Validacion simulada task_id=%s paths=%s", message.content["task_id"], paths)
+        missing = [path for path in paths if not self.file_tool.exists(path)]
+        if missing:
             await self.publish(
                 EventType.TEST_FAILED,
-                {"task_id": message.content["task_id"], "path": path, "error": "Archivo no existe"},
+                {
+                    "task_id": message.content["task_id"],
+                    "paths": missing,
+                    "error": "Archivo no existe",
+                },
                 source=message,
             )
             await self.publish(
@@ -43,7 +49,7 @@ class TesterAgent(BaseAgent):
             )
             return
 
-        result = {"path": path, "simulated": True}
+        result = {"paths": paths, "simulated": True}
         await self.publish(
             EventType.TEST_PASSED,
             {"task_id": message.content["task_id"], **result},

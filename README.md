@@ -123,6 +123,20 @@ Ejecutar un objetivo con LLM mock:
 python -m multi_agent_lab run --goal "Crear README para app TODO" --mock
 ```
 
+Ejecutar un objetivo multi-archivo:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una pequena API Flask TODO" --mock
+```
+
+Resultado esperado en `workspace/`:
+
+```text
+app.py
+requirements.txt
+README.md
+```
+
 Ejecutar un objetivo con Ollama real:
 
 ```powershell
@@ -136,6 +150,8 @@ python -m multi_agent_lab run --goal "Crear README para app TODO" --mock --works
 ```
 
 El runtime publica `WORKFLOW_STARTED`, envia `GOAL_SUBMITTED` y espera hasta `WORKFLOW_COMPLETED`, `WORKFLOW_HALTED` o `WORKFLOW_TIMEOUT`. Al terminar muestra objetivo, tareas completadas, tareas fallidas, archivos creados, duracion y estado final.
+
+Para objetivos multi-archivo, `FileAwarenessService` lista y lee archivos relevantes dentro del workspace para que los agentes mantengan coherencia entre `app.py`, `requirements.txt` y `README.md`. No lee fuera del sandbox ni archivos por encima del limite seguro.
 
 ## Workspace seguro
 

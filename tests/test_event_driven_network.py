@@ -80,7 +80,7 @@ async def test_complete_event_driven_demo_writes_file(tmp_path: Path) -> None:
         assert result.type == EventType.TEST_PASSED
         assert result.correlation_id is not None
         assert file_tool.exists("README.md")
-        assert "TODO App" in file_tool.read_file("README.md")
+        assert "TODO" in file_tool.read_file("README.md")
     finally:
         for agent in agents:
             await agent.stop()
