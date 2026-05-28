@@ -1,12 +1,15 @@
-"""Async in-memory message bus."""
+"""Async in-memory event bus."""
 
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Iterable
 
-from multi_agent_lab.core.message import Message
+from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.sqlite_store import SQLiteStore
+
+WILDCARD_EVENT = "*"
 
 
 class MessageBus:
@@ -17,21 +20,40 @@ class MessageBus:
         self._lock = asyncio.Lock()
         self._store = store
 
-    async def subscribe(self, receiver: str) -> asyncio.Queue[Message]:
-        """Subscribe to messages addressed to a receiver."""
-        queue: asyncio.Queue[Message] = asyncio.Queue()
+    async def subscribe(
+        self,
+        event_type: str | EventType,
+        queue: asyncio.Queue[Message] | None = None,
+    ) -> asyncio.Queue[Message]:
+        """Subscribe a queue to one event type."""
+        inbox: asyncio.Queue[Message] = queue or asyncio.Queue()
         async with self._lock:
-            self._subscribers[receiver].append(queue)
-        return queue
+            self._subscribers[str(event_type)].append(inbox)
+        return inbox
+
+    async def subscribe_many(
+        self,
+        event_types: Iterable[str | EventType],
+    ) -> asyncio.Queue[Message]:
+        """Subscribe one queue to multiple event types."""
+        inbox: asyncio.Queue[Message] = asyncio.Queue()
+        for event_type in event_types:
+            await self.subscribe(event_type, inbox)
+        return inbox
 
     async def publish(self, message: Message) -> None:
-        """Publish a message to direct and broadcast subscribers."""
+        """Publish an event to matching and wildcard subscribers."""
         if self._store is not None:
             self._store.save_message(message)
 
         async with self._lock:
-            direct_subscribers = list(self._subscribers.get(message.receiver, []))
-            broadcast_subscribers = list(self._subscribers.get("*", []))
+            event_subscribers = list(self._subscribers.get(str(message.type), []))
+            wildcard_subscribers = list(self._subscribers.get(WILDCARD_EVENT, []))
 
-        for queue in direct_subscribers + broadcast_subscribers:
+        delivered: set[int] = set()
+        for queue in event_subscribers + wildcard_subscribers:
+            queue_id = id(queue)
+            if queue_id in delivered:
+                continue
+            delivered.add(queue_id)
             await queue.put(message)

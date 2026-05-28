@@ -4,12 +4,14 @@ Sistema multiagente local y asincrono en Python, preparado para crecer hacia una
 
 ## Objetivo actual
 
-La fase 2 demuestra comunicacion multiagente asincrona con persistencia local y trazabilidad:
+La fase actual demuestra una red multiagente autonoma basada en eventos:
 
 - Bus de mensajes con `asyncio`.
+- Agentes desacoplados que escuchan eventos y publican nuevos eventos.
+- `correlation_id`, `causation_id` y `metadata` en cada mensaje.
 - Persistencia SQLite para `messages`, `tasks` y `agent_events`.
 - Cola de tareas con cambios de estado persistidos.
-- Tres agentes locales: planner, coder y reviewer.
+- Agentes locales: planner, coder, reviewer, file, tester y supervisor.
 - Logger de eventos de agentes.
 - Configuracion mediante `.env`.
 - Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
@@ -53,13 +55,18 @@ DATABASE_URL=sqlite:///multi_agent_lab.db
 python -m multi_agent_lab.main --mode demo_mock
 ```
 
-Este modo no llama a Ollama. El flujo genera un `README.md` de ejemplo dentro de `./workspace/`:
+Este modo no llama a Ollama. La demo publica `GOAL_SUBMITTED` y la red genera un `README.md` de ejemplo dentro de `./workspace/`:
 
 ```text
-Planner -> Coder -> Reviewer -> FileTool
+GOAL_SUBMITTED
+  -> PlannerAgent publica TASK_CREATED
+  -> CoderAgent publica CODE_PROPOSED
+  -> ReviewerAgent publica REVIEW_APPROVED
+  -> FileAgent escribe con FileTool y publica FILE_WRITTEN
+  -> TesterAgent simula validacion y publica TEST_PASSED
 ```
 
-El planner crea una tarea de archivo, el coder genera contenido local simulado, el reviewer valida la propuesta y `FileTool` escribe el archivo solo si la ruta es segura.
+Ningun agente llama directamente a otro agente. Todos reaccionan de forma autonoma a eventos del `MessageBus`. `SupervisorAgent` escucha `*` y puede publicar `WORKFLOW_HALTED` si detecta demasiados eventos o errores repetidos.
 
 ## Ejecutar demo con Ollama
 

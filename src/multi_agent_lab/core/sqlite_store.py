@@ -49,7 +49,10 @@ class SQLiteStore:
                 type TEXT NOT NULL,
                 content TEXT NOT NULL,
                 priority INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                correlation_id TEXT,
+                causation_id TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}'
             );
 
             CREATE TABLE IF NOT EXISTS tasks (
@@ -71,24 +74,53 @@ class SQLiteStore:
                 created_at TEXT NOT NULL
             );
             """)
+        self._migrate_messages_table()
         self._connection.commit()
+
+    def _migrate_messages_table(self) -> None:
+        """Add newer message columns to existing databases."""
+        existing_columns = {
+            row["name"] for row in self._connection.execute("PRAGMA table_info(messages)")
+        }
+        migrations = {
+            "correlation_id": "ALTER TABLE messages ADD COLUMN correlation_id TEXT",
+            "causation_id": "ALTER TABLE messages ADD COLUMN causation_id TEXT",
+            "metadata": "ALTER TABLE messages ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'",
+        }
+        for column, statement in migrations.items():
+            if column not in existing_columns:
+                self._connection.execute(statement)
 
     def save_message(self, message: Message) -> None:
         """Persist a message."""
         self._connection.execute(
             """
             INSERT OR REPLACE INTO messages
-            (id, sender, receiver, type, content, priority, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (
+                id,
+                sender,
+                receiver,
+                type,
+                content,
+                priority,
+                created_at,
+                correlation_id,
+                causation_id,
+                metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 message.id,
                 message.sender,
                 message.receiver,
-                message.type,
+                str(message.type),
                 json.dumps(message.content, ensure_ascii=True),
                 message.priority,
                 message.created_at.isoformat(),
+                message.correlation_id,
+                message.causation_id,
+                json.dumps(message.metadata, ensure_ascii=True),
             ),
         )
         self._connection.commit()

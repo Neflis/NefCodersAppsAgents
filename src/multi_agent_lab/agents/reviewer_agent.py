@@ -1,78 +1,51 @@
-"""Reviewer agent that reviews simulated coder output."""
+"""Reviewer agent that approves or rejects proposed content."""
 
 from __future__ import annotations
 
 import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
-from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import Message, MessageType
-from multi_agent_lab.core.message_bus import MessageBus
-from multi_agent_lab.tools.file_tool import FileTool, FileToolError
+from multi_agent_lab.core.message import EventType, Message
 
 logger = logging.getLogger(__name__)
 
 
 class ReviewerAgent(BaseAgent):
-    """Agent that reviews coder responses."""
+    """Agent that listens for code proposals and emits review events."""
 
-    def __init__(
-        self,
-        name: str,
-        bus: MessageBus,
-        event_logger: AgentEventLogger | None = None,
-        file_tool: FileTool | None = None,
-    ) -> None:
-        super().__init__(name, bus, event_logger)
-        self.file_tool = file_tool
+    subscribed_events = (EventType.CODE_PROPOSED,)
 
     async def handle_message(self, message: Message) -> None:
-        """Review simulated code messages."""
-        if message.type != MessageType.FILE_WRITE_REQUEST:
-            logger.info("Mensaje ignorado: %s", message.type)
-            return
+        """Review proposed content without writing files directly."""
+        content = str(message.content.get("content", ""))
+        target_path = str(message.content.get("path", "README.md"))
+        logger.info(
+            "Revisando propuesta task_id=%s path=%s", message.content["task_id"], target_path
+        )
 
-        content = message.content
-        target_path = content["path"]
-        logger.info("Revisando escritura task_id=%s path=%s", content["task_id"], target_path)
-
-        if self.file_tool is None:
+        if not self._is_valid_content(content):
             await self.publish(
-                "planner",
-                MessageType.TASK_FAILED,
-                {"task_id": content["task_id"], "error": "FileTool no configurado."},
+                EventType.REVIEW_REJECTED,
+                {
+                    "task_id": message.content["task_id"],
+                    "path": target_path,
+                    "reason": "Contenido vacio o demasiado grande.",
+                },
+                source=message,
             )
             return
 
-        if not self._is_valid_content(content["content"]):
-            await self.publish(
-                "planner",
-                MessageType.TASK_FAILED,
-                {"task_id": content["task_id"], "error": "Contenido rechazado por reviewer."},
-            )
-            return
-
-        try:
-            written_path = self.file_tool.write_file(target_path, content["content"])
-        except FileToolError as error:
-            await self.publish(
-                "planner",
-                MessageType.TASK_FAILED,
-                {"task_id": content["task_id"], "path": target_path, "error": str(error)},
-            )
-            return
-
-        logger.info("Archivo modificado path=%s", written_path)
         await self.publish(
-            "planner",
-            MessageType.FILE_WRITE_RESULT,
+            EventType.REVIEW_APPROVED,
             {
-                "task_id": content["task_id"],
-                "path": written_path,
-                "approved": True,
+                "task_id": message.content["task_id"],
+                "action": message.content.get("action", "write_file"),
+                "path": target_path,
+                "content": content,
             },
+            source=message,
         )
 
     def _is_valid_content(self, content: str) -> bool:
-        """Validate generated content before file writing."""
+        """Validate generated content before approving file writing."""
         return bool(content.strip()) and len(content.encode("utf-8")) <= 1024 * 1024

@@ -1,5 +1,5 @@
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import Message
+from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.sqlite_store import SQLiteStore
 from multi_agent_lab.core.task import Task, TaskStatus
@@ -14,7 +14,10 @@ async def test_message_bus_persists_published_messages(tmp_path) -> None:
     store = make_store(tmp_path)
     bus = MessageBus(store)
     message = Message(
-        sender="planner", receiver="coder", type="task.created", content={"task_id": "1"}
+        sender="planner",
+        type=EventType.TASK_CREATED,
+        content={"task_id": "1"},
+        metadata={"demo": True},
     )
 
     await bus.publish(message)
@@ -23,6 +26,7 @@ async def test_message_bus_persists_published_messages(tmp_path) -> None:
     assert len(rows) == 1
     assert rows[0]["id"] == message.id
     assert rows[0]["sender"] == "planner"
+    assert rows[0]["correlation_id"] == message.correlation_id
     store.close()
 
 

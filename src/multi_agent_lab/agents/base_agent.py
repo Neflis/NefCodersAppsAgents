@@ -6,12 +6,14 @@ import asyncio
 from contextlib import suppress
 
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import Message
+from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 
 
 class BaseAgent:
-    """Base class for asynchronous message-driven agents."""
+    """Base class for autonomous event-driven agents."""
+
+    subscribed_events: tuple[str | EventType, ...] = ()
 
     def __init__(
         self, name: str, bus: MessageBus, event_logger: AgentEventLogger | None = None
@@ -24,13 +26,13 @@ class BaseAgent:
         self._loop_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Subscribe the agent to the bus and start its message loop."""
+        """Subscribe the agent to its events and start its message loop."""
         if self._running:
             return
         self._running = True
-        self._inbox = await self.bus.subscribe(self.name)
+        self._inbox = await self.bus.subscribe_many(self.subscribed_events)
         self._loop_task = asyncio.create_task(self._run(), name=f"{self.name}-agent")
-        await self._log_event("agent_started")
+        await self._log_event("agent_started", {"events": [str(e) for e in self.subscribed_events]})
 
     async def stop(self) -> None:
         """Stop the agent message loop."""
@@ -43,20 +45,27 @@ class BaseAgent:
         await self._log_event("agent_stopped")
 
     async def handle_message(self, message: Message) -> None:
-        """Handle one incoming message."""
+        """Handle one incoming event."""
         raise NotImplementedError
 
     async def publish(
-        self, receiver: str, message_type: str, content: object, priority: int = 0
+        self,
+        event_type: str | EventType,
+        content: object,
+        source: Message | None = None,
+        priority: int = 0,
+        metadata: dict[str, object] | None = None,
     ) -> None:
-        """Publish a message from this agent."""
+        """Publish an event caused by an optional source event."""
         await self.bus.publish(
             Message(
                 sender=self.name,
-                receiver=receiver,
-                type=message_type,
+                type=event_type,
                 content=content,
                 priority=priority,
+                correlation_id=source.correlation_id if source else None,
+                causation_id=source.id if source else None,
+                metadata=metadata or {},
             )
         )
 
@@ -75,7 +84,8 @@ class BaseAgent:
                 {
                     "message_id": message.id,
                     "sender": message.sender,
-                    "type": message.type,
+                    "type": str(message.type),
+                    "correlation_id": message.correlation_id,
                 },
             )
             await self.handle_message(message)
@@ -84,6 +94,7 @@ class BaseAgent:
                 {
                     "message_id": message.id,
                     "sender": message.sender,
-                    "type": message.type,
+                    "type": str(message.type),
+                    "correlation_id": message.correlation_id,
                 },
             )

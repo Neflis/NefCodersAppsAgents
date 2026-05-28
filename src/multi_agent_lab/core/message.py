@@ -1,4 +1,4 @@
-"""Message primitives for asynchronous agent communication."""
+"""Message primitives for asynchronous event communication."""
 
 from __future__ import annotations
 
@@ -9,26 +9,43 @@ from typing import Any
 from uuid import uuid4
 
 
-class MessageType(StrEnum):
-    """Known message types exchanged by agents."""
+class EventType(StrEnum):
+    """Known event types exchanged by agents."""
 
-    TASK_CREATED = "task.created"
-    CODE_SIMULATED = "code.simulated"
-    REVIEW_COMPLETED = "review.completed"
+    GOAL_SUBMITTED = "GOAL_SUBMITTED"
+    TASK_CREATED = "TASK_CREATED"
+    CODE_PROPOSED = "CODE_PROPOSED"
+    REVIEW_APPROVED = "REVIEW_APPROVED"
+    REVIEW_REJECTED = "REVIEW_REJECTED"
     FILE_READ_REQUEST = "FILE_READ_REQUEST"
     FILE_WRITE_REQUEST = "FILE_WRITE_REQUEST"
-    FILE_WRITE_RESULT = "FILE_WRITE_RESULT"
+    FILE_WRITTEN = "FILE_WRITTEN"
+    FILE_WRITE_FAILED = "FILE_WRITE_FAILED"
+    TEST_PASSED = "TEST_PASSED"
+    TEST_FAILED = "TEST_FAILED"
     TASK_FAILED = "TASK_FAILED"
+    WORKFLOW_HALTED = "WORKFLOW_HALTED"
+
+
+MessageType = EventType
 
 
 @dataclass(slots=True)
 class Message:
-    """Message exchanged through the asynchronous message bus."""
+    """Event exchanged through the asynchronous message bus."""
 
     sender: str
-    receiver: str
-    type: str | MessageType
+    type: str | EventType
     content: Any
+    receiver: str = "*"
     priority: int = 0
+    correlation_id: str | None = None
+    causation_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        """Default correlation to the event id for root events."""
+        if self.correlation_id is None:
+            self.correlation_id = self.id
