@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class CoderAgent(BaseAgent):
     """Agent that claims coding tasks and proposes content."""
 
-    subscribed_events = (EventType.TASK_READY,)
+    subscribed_events = (EventType.TASK_READY, EventType.FIX_REQUESTED)
     capabilities = (Capability.CODING.value,)
 
     def __init__(
@@ -38,6 +38,9 @@ class CoderAgent(BaseAgent):
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible coding tasks and complete them with a proposal."""
+        if message.type == EventType.FIX_REQUESTED:
+            await self._handle_fix_request(message)
+            return
         if not self.can_claim(message):
             return
         await self.claim_task(message)
@@ -65,6 +68,37 @@ class CoderAgent(BaseAgent):
                 {"task_id": message.content["task_id"], **result},
                 source=message,
             )
+        await self.publish(
+            EventType.TASK_COMPLETED,
+            {"task_id": message.content["task_id"], "result": result, "owner": self.name},
+            source=message,
+        )
+
+    async def _handle_fix_request(self, message: Message) -> None:
+        """Propose a concrete file change from execution failure context."""
+        if not self.can_claim(message):
+            return
+        await self.claim_task(message)
+        payload = dict(message.content.get("payload", {}))
+        failure = dict(payload.get("failure", {}))
+        target_path = str(payload.get("path", "app.py"))
+        focus_files = list(payload.get("suggested_focus_files", []))
+        based_on_error = self._failure_text(failure)
+        content = await self._fix_content(message, target_path, focus_files, based_on_error)
+        result = {
+            "path": target_path,
+            "content": content,
+            "reason": "Apply fix based on controlled execution failure.",
+            "based_on_error": based_on_error[:1000],
+            "execution_task_id": payload.get("execution_task_id"),
+            "command_id": payload.get("command_id", "pytest"),
+            "args": list(payload.get("args", [])),
+        }
+        await self.publish(
+            EventType.FIX_PROPOSED,
+            {"task_id": message.content["task_id"], **result},
+            source=message,
+        )
         await self.publish(
             EventType.TASK_COMPLETED,
             {"task_id": message.content["task_id"], "result": result, "owner": self.name},
@@ -126,6 +160,86 @@ class CoderAgent(BaseAgent):
         if target_path == "requirements.txt":
             return ["app.py"]
         return []
+
+    async def _fix_content(
+        self,
+        message: Message,
+        target_path: str,
+        focus_files: list[object],
+        based_on_error: str,
+    ) -> str:
+        """Generate deterministic or LLM-backed fix content."""
+        if self.ollama_client is None:
+            return self._mock_fix_content(target_path, based_on_error)
+        self.context_builder.record_event(message)
+        prompt = PromptTemplate(
+            identity="CoderAgent",
+            capabilities=[Capability.CODING.value],
+            constraints=[
+                "Return JSON only.",
+                "Fix exactly one safe workspace file.",
+                "Do not request command execution.",
+            ],
+            input_context=self.context_builder.build(
+                message,
+                current_task={
+                    "title": message.content.get("title", "Fix execution failure"),
+                    "path": target_path,
+                    "payload": message.content.get("payload", {}),
+                    "based_on_error": based_on_error,
+                },
+                workspace_paths=[str(path) for path in focus_files],
+            ),
+            expected_json_output={
+                "content": "full replacement file content",
+                "reasoning_summary": "short text",
+            },
+            example_json_output={
+                "content": self._mock_fix_content(target_path, based_on_error),
+                "reasoning_summary": "Fixed the failing assertion.",
+            },
+        ).render()
+        try:
+            data = await self.ollama_client.generate_json(prompt, CODER_DECISION_FIELDS)
+            decision = self._decision_from_schema(data)
+            if isinstance(decision.content, str):
+                return decision.content
+        except (InvalidJSONError, OllamaClientError) as error:
+            logger.info("Coder fix LLM no disponible; usando fix determinista: %s", error)
+            self.ollama_client.record_fallback()
+        return self._mock_fix_content(target_path, based_on_error)
+
+    def _failure_text(self, failure: dict[str, object]) -> str:
+        """Join relevant failure fields for fix context."""
+        return "\n".join(
+            [
+                str(failure.get("command", "")),
+                str(failure.get("stderr", "")),
+                str(failure.get("stdout", "")),
+            ]
+        ).strip()
+
+    def _mock_fix_content(self, target_path: str, based_on_error: str) -> str:
+        """Return deterministic replacement content for common demo failures."""
+        if target_path == "requirements.txt" or "ModuleNotFoundError" in based_on_error:
+            return "Flask>=3.0\n"
+        if target_path == "README.md" or "README" in based_on_error:
+            return "\n".join(
+                [
+                    "# Flask TODO API",
+                    "",
+                    "Pequena API Flask para gestionar tareas TODO.",
+                    "",
+                    "## Endpoints",
+                    "",
+                    "- `GET /todos`",
+                    "- `POST /todos`",
+                    "",
+                ]
+            )
+        if target_path == "tests/test_app.py":
+            return self._mock_file_content("Fix tests", "tests/test_app.py", "pytest_tests")
+        return self._mock_file_content("Fix app", "app.py", "flask_app")
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""

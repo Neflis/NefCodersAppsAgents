@@ -75,7 +75,11 @@ class FileTool:
 
         files: list[str] = []
         for item in safe_path.rglob("*"):
-            if ".traces" in item.relative_to(self.workspace.root).parts:
+            relative_parts = item.relative_to(self.workspace.root).parts
+            if any(
+                ignored in relative_parts
+                for ignored in {".pytest_cache", "__pycache__", ".traces", ".memory"}
+            ):
                 continue
             if item.is_file() and item.suffix in self.allowed_extensions:
                 files.append(

@@ -79,6 +79,14 @@ def print_summary(summary: RuntimeSummary) -> None:
         f"fallbacks={summary.fallback_count} "
         f"avg_latency={summary.average_llm_latency:.2f}s"
     )
+    print(
+        "Execution: "
+        f"ok={summary.execution_success_count} "
+        f"fail={summary.execution_failure_count} "
+        f"fix_attempts={summary.fix_attempts}"
+    )
+    if summary.final_failure_reason:
+        print(f"Final failure: {summary.final_failure_reason}")
     event_counts = summary.event_summary.get("event_counts", {})
     if event_counts:
         print(f"Eventos: {event_counts}")

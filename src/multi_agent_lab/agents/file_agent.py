@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class FileAgent(BaseAgent):
     """Agent that claims file write tasks and uses FileTool."""
 
-    subscribed_events = (EventType.TASK_READY, EventType.CODE_PROPOSED)
+    subscribed_events = (EventType.TASK_READY, EventType.CODE_PROPOSED, EventType.FIX_PROPOSED)
     capabilities = (Capability.FILE_WRITE.value,)
 
     def __init__(
@@ -37,6 +37,9 @@ class FileAgent(BaseAgent):
         """Claim compatible file tasks and write approved content."""
         if message.type == EventType.CODE_PROPOSED:
             await self._write_proposed_file(message)
+            return
+        if message.type == EventType.FIX_PROPOSED:
+            await self._apply_fix(message)
             return
         if not self.can_claim(message):
             return
@@ -96,5 +99,42 @@ class FileAgent(BaseAgent):
         await self.publish(
             EventType.FILE_WRITTEN,
             {"task_id": message.content["task_id"], "path": written_path},
+            source=message,
+        )
+
+    async def _apply_fix(self, message: Message) -> None:
+        """Apply a proposed fix as a safe file replacement."""
+        path = str(message.content["path"])
+        logger.info("Aplicando fix path=%s", path)
+        try:
+            written_path = self.file_tool.write_file(path, str(message.content["content"]))
+        except FileToolError as error:
+            await self.publish(
+                EventType.FIX_FAILED,
+                {
+                    "task_id": message.content["task_id"],
+                    "path": path,
+                    "error": str(error),
+                    "execution_task_id": message.content.get("execution_task_id"),
+                },
+                source=message,
+            )
+            await self.publish(
+                EventType.TASK_FAILED,
+                {"task_id": message.content["task_id"], "error": str(error)},
+                source=message,
+            )
+            return
+        await self.publish(
+            EventType.FIX_APPLIED,
+            {
+                "task_id": message.content["task_id"],
+                "path": written_path,
+                "reason": message.content.get("reason", ""),
+                "based_on_error": message.content.get("based_on_error", ""),
+                "execution_task_id": message.content.get("execution_task_id"),
+                "command_id": message.content.get("command_id", "pytest"),
+                "args": list(message.content.get("args", [])),
+            },
             source=message,
         )

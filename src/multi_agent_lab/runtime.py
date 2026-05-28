@@ -53,6 +53,10 @@ class RuntimeSummary:
     llm_failure_count: int = 0
     fallback_count: int = 0
     average_llm_latency: float = 0.0
+    execution_success_count: int = 0
+    execution_failure_count: int = 0
+    fix_attempts: int = 0
+    final_failure_reason: str = ""
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -303,5 +307,20 @@ class AgentRuntime:
             llm_failure_count=llm_metrics.failure_count,
             fallback_count=llm_metrics.fallback_count,
             average_llm_latency=llm_metrics.average_latency,
+            execution_success_count=self._event_count(
+                noise_reducer, EventType.TEST_EXECUTION_PASSED
+            ),
+            execution_failure_count=self._event_count(
+                noise_reducer, EventType.TEST_EXECUTION_FAILED
+            ),
+            fix_attempts=self._event_count(noise_reducer, EventType.FIX_REQUESTED),
+            final_failure_reason=str(dict(terminal_event.content or {}).get("reason", "")),
             details=dict(terminal_event.content or {}),
         )
+
+    def _event_count(self, noise_reducer: EventNoiseReducer, event_type: EventType) -> int:
+        summary = noise_reducer.summary()
+        event_counts = summary.get("event_counts", {})
+        if not isinstance(event_counts, dict):
+            return 0
+        return int(event_counts.get(str(event_type), 0))

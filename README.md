@@ -218,6 +218,31 @@ cmd, powershell, bash, curl, wget, rm, del, git, npm, docker
 
 La ejecucion se comunica por eventos: `TEST_EXECUTION_REQUESTED`, `TEST_EXECUTION_STARTED`, `TEST_EXECUTION_PASSED` y `TEST_EXECUTION_FAILED`. Si falla, el resultado incluye salida truncada y feedback sobre imports faltantes, errores de sintaxis o timeout. El coordinator mantiene un maximo de 2 retries automaticos antes de bloquear la tarea.
 
+## Auto-fix tras fallos
+
+Cuando una ejecucion controlada falla, el sistema no detiene el workflow de inmediato. `TaskCoordinatorAgent` convierte `TEST_EXECUTION_FAILED` en una tarea de correccion `coding` y publica `FIX_REQUESTED`.
+
+Flujo actual:
+
+```text
+TEST_EXECUTION_FAILED
+  -> FIX_REQUESTED
+  -> CoderAgent publica FIX_PROPOSED
+  -> FileAgent aplica el cambio y publica FIX_APPLIED
+  -> TesterExecutionAgent publica RETEST_REQUESTED
+  -> pytest se ejecuta otra vez
+```
+
+`max_fix_attempts` es 2 por defecto. Si las correcciones no consiguen que la validacion pase, el workflow termina con `WORKFLOW_HALTED` y `final_failure_reason=max_fix_attempts_exceeded`.
+
+Limites actuales:
+
+- solo se reemplaza un archivo seguro por fix
+- no hay shell libre
+- no hay comandos nuevos fuera de la whitelist
+- no hay escritura fuera del workspace
+- el feedback se basa en `stdout`, `stderr`, exit code y archivos inferidos
+
 ## TaskGraph y capabilities
 
 Cada goal crea un `TaskGraph` identificado por `correlation_id`. Cada `TaskNode` contiene:

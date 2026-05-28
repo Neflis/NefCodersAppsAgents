@@ -15,7 +15,12 @@ logger = logging.getLogger(__name__)
 class TesterExecutionAgent(BaseAgent):
     """Agent that runs controlled command validations when explicitly enabled."""
 
-    subscribed_events = (EventType.TASK_READY, EventType.TEST_EXECUTION_REQUESTED)
+    subscribed_events = (
+        EventType.TASK_READY,
+        EventType.TEST_EXECUTION_REQUESTED,
+        EventType.RETEST_REQUESTED,
+        EventType.FIX_APPLIED,
+    )
     capabilities = (Capability.TESTING_EXECUTION.value,)
 
     def __init__(self, name: str, bus, command_tool: CommandTool, event_logger=None) -> None:
@@ -29,6 +34,12 @@ class TesterExecutionAgent(BaseAgent):
             return
         if message.type == EventType.TEST_EXECUTION_REQUESTED:
             await self._execute(message)
+            return
+        if message.type == EventType.RETEST_REQUESTED:
+            await self._execute(message)
+            return
+        if message.type == EventType.FIX_APPLIED:
+            await self._request_retest(message)
 
     async def _request_execution(self, message: Message) -> None:
         if not self.can_claim(message):
@@ -58,10 +69,25 @@ class TesterExecutionAgent(BaseAgent):
         try:
             result = self.command_tool.run_command(command_id, args)
         except CommandToolError as error:
-            await self._publish_failed(message, task_id, {"error": str(error)})
+            await self._publish_failed(
+                message,
+                task_id,
+                {
+                    "task_id": task_id,
+                    "command": " ".join([command_id, *[str(arg) for arg in args]]).strip(),
+                    "command_id": command_id,
+                    "args": args,
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": str(error),
+                    "failed_files": [],
+                    "suggested_focus_files": ["app.py", "tests/test_app.py"],
+                    "error": str(error),
+                },
+            )
             return
 
-        payload = {"task_id": task_id, "command_id": command_id, "result": result.to_dict()}
+        payload = self._execution_payload(task_id, command_id, args, result.to_dict())
         if result.success:
             await self.publish(EventType.TEST_EXECUTION_PASSED, payload, source=message)
             await self.publish(
@@ -81,11 +107,66 @@ class TesterExecutionAgent(BaseAgent):
     ) -> None:
         await self.publish(EventType.TEST_EXECUTION_FAILED, payload, source=message)
         error = self._feedback_from_failure(payload)
+        if message.type in {EventType.TEST_EXECUTION_REQUESTED, EventType.RETEST_REQUESTED}:
+            return
         await self.publish(
             EventType.TASK_FAILED,
             {"task_id": task_id, "error": error, "execution_feedback": payload},
             source=message,
         )
+
+    async def _request_retest(self, message: Message) -> None:
+        command_id = str(message.content.get("command_id", "pytest"))
+        args = list(message.content.get("args", []))
+        task_id = str(message.content.get("execution_task_id", message.content.get("task_id")))
+        await self.publish(
+            EventType.RETEST_REQUESTED,
+            {"task_id": task_id, "command_id": command_id, "args": args},
+            source=message,
+        )
+
+    def _execution_payload(
+        self,
+        task_id: str,
+        command_id: str,
+        args: list[object],
+        result: dict[str, object],
+    ) -> dict[str, object]:
+        """Build rich execution event content."""
+        stdout = str(result.get("stdout", ""))
+        stderr = str(result.get("stderr", ""))
+        return {
+            "task_id": task_id,
+            "command": " ".join([command_id, *[str(arg) for arg in args]]).strip(),
+            "command_id": command_id,
+            "args": args,
+            "exit_code": result.get("exit_code", -1),
+            "stdout": stdout,
+            "stderr": stderr,
+            "failed_files": self._infer_failed_files(stdout, stderr),
+            "suggested_focus_files": self._suggest_focus_files(stdout, stderr),
+            "result": result,
+        }
+
+    def _infer_failed_files(self, stdout: str, stderr: str) -> list[str]:
+        """Infer likely failed files from command output."""
+        combined = f"{stdout}\n{stderr}"
+        candidates = []
+        for path in ("app.py", "requirements.txt", "README.md", "tests/test_app.py"):
+            if path in combined:
+                candidates.append(path)
+        return candidates
+
+    def _suggest_focus_files(self, stdout: str, stderr: str) -> list[str]:
+        """Suggest safe files for a coder fix task."""
+        combined = f"{stdout}\n{stderr}"
+        if "requirements" in combined or "ModuleNotFoundError" in combined:
+            return ["requirements.txt", "app.py"]
+        if "README" in combined:
+            return ["README.md", "tests/test_app.py"]
+        if "SyntaxError" in combined:
+            return ["app.py", "tests/test_app.py"]
+        return self._infer_failed_files(stdout, stderr) or ["app.py", "tests/test_app.py"]
 
     def _feedback_from_failure(self, payload: dict[str, object]) -> str:
         """Create actionable feedback from command failure output."""
