@@ -127,6 +127,7 @@ class TaskCoordinatorAgent(BaseAgent):
             return
 
         self._fix_attempts[key] = attempts + 1
+        fix_metadata = self._fix_metadata(message, attempts + 1)
         fix_task = graph.add_task(
             TaskNode(
                 title=f"Corregir fallo de ejecucion #{attempts + 1}",
@@ -142,6 +143,7 @@ class TaskCoordinatorAgent(BaseAgent):
                     "suggested_focus_files": message.content.get("suggested_focus_files", []),
                     "command_id": message.content.get("command_id", "pytest"),
                     "args": message.content.get("args", []),
+                    "metadata": fix_metadata,
                 },
                 dependencies={task_id},
                 priority=7,
@@ -150,8 +152,19 @@ class TaskCoordinatorAgent(BaseAgent):
         )
         self.graph_store.persist(graph)
         payload = self._task_ready_payload(fix_task)
-        await self.publish(EventType.FIX_REQUESTED, payload, source=message)
+        await self.publish(EventType.FIX_REQUESTED, payload, source=message, metadata=fix_metadata)
+        await self.publish(EventType.TASK_READY, payload, source=message, metadata=fix_metadata)
         await self._publish_graph_updated(message)
+
+    def _fix_metadata(self, message: Message, attempt: int) -> dict[str, object]:
+        """Build metadata for a generated fix task."""
+        return {
+            "failed_command": message.content.get("command", ""),
+            "stdout": message.content.get("stdout", ""),
+            "stderr": message.content.get("stderr", ""),
+            "suggested_focus_files": message.content.get("suggested_focus_files", []),
+            "fix_attempt": attempt,
+        }
 
     def _primary_focus_file(self, message: Message) -> str:
         focus_files = message.content.get("suggested_focus_files", [])

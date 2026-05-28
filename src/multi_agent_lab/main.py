@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable controlled command execution inside the workspace.",
     )
+    run_parser.add_argument("--max-events", type=int, help="Maximum events per workflow.")
+    run_parser.add_argument("--max-fix-attempts", type=int, help="Maximum auto-fix attempts.")
 
     parser.add_argument(
         "--mode",
@@ -57,6 +59,8 @@ async def run_from_args(args: argparse.Namespace) -> RuntimeSummary:
             timeout_seconds=args.timeout,
             verbose=args.verbose,
             allow_execution=args.allow_execution,
+            max_events=args.max_events,
+            max_fix_attempts=args.max_fix_attempts,
         )
         return await runtime.run()
 

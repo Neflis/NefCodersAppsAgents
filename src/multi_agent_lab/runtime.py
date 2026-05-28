@@ -74,6 +74,8 @@ class AgentRuntime:
         verbose: bool = False,
         max_context_chars: int = 6000,
         allow_execution: bool = False,
+        max_events: int | None = None,
+        max_fix_attempts: int | None = None,
     ) -> None:
         self.goal = goal
         self.workspace_path = workspace_path
@@ -84,6 +86,8 @@ class AgentRuntime:
         self.verbose = verbose
         self.max_context_chars = max_context_chars
         self.allow_execution = allow_execution
+        self.max_events = max_events or self.settings.max_events_per_workflow
+        self.max_fix_attempts = max_fix_attempts or self.settings.max_fix_attempts
 
     async def run(self) -> RuntimeSummary:
         """Run one goal through the autonomous agent network."""
@@ -151,16 +155,21 @@ class AgentRuntime:
                 )
             )
             await bus.publish(goal_event)
-            try:
-                terminal_event = await asyncio.wait_for(
-                    terminal_inbox.get(),
-                    timeout=self.timeout_seconds,
-                )
-            except TimeoutError:
+            terminal_event = await self._wait_for_terminal_event(
+                terminal_inbox,
+                noise_reducer,
+                started_at,
+                goal_event.correlation_id or goal_event.id,
+            )
+            if terminal_event is None:
                 terminal_event = Message(
                     sender="runtime",
                     type=EventType.WORKFLOW_TIMEOUT,
-                    content={"goal": self.goal, "timeout_seconds": self.timeout_seconds},
+                    content={
+                        "goal": self.goal,
+                        "timeout_seconds": self.timeout_seconds,
+                        "reason": "workflow_timeout",
+                    },
                     correlation_id=goal_event.correlation_id,
                 )
                 await bus.publish(terminal_event)
@@ -236,8 +245,20 @@ class AgentRuntime:
             ),
             FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
             TesterAgent("tester", bus, file_tool, event_logger),
-            TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),
-            SupervisorAgent("supervisor", bus, event_logger, noise_reducer=noise_reducer),
+            TaskCoordinatorAgent(
+                "coordinator",
+                bus,
+                graph_store,
+                event_logger,
+                max_fix_attempts=self.max_fix_attempts,
+            ),
+            SupervisorAgent(
+                "supervisor",
+                bus,
+                event_logger,
+                max_events_per_correlation=self.max_events,
+                noise_reducer=noise_reducer,
+            ),
         ]
         if self.allow_execution:
             agents.insert(
@@ -316,6 +337,47 @@ class AgentRuntime:
             fix_attempts=self._event_count(noise_reducer, EventType.FIX_REQUESTED),
             final_failure_reason=str(dict(terminal_event.content or {}).get("reason", "")),
             details=dict(terminal_event.content or {}),
+        )
+
+    async def _wait_for_terminal_event(
+        self,
+        terminal_inbox: asyncio.Queue[Message],
+        noise_reducer: EventNoiseReducer,
+        started_at: float,
+        correlation_id: str,
+    ) -> Message | None:
+        """Wait for terminal events while allowing in-flight fixes to finish."""
+        while True:
+            remaining = self.timeout_seconds - (perf_counter() - started_at)
+            if remaining <= 0:
+                return None
+            try:
+                event = await asyncio.wait_for(terminal_inbox.get(), timeout=remaining)
+            except TimeoutError:
+                return None
+            if event.type != EventType.WORKFLOW_HALTED:
+                return event
+            reason = str(event.content.get("reason", ""))
+            if reason == "max_events_exceeded" and self._fix_in_progress(
+                noise_reducer,
+                correlation_id,
+            ):
+                continue
+            return event
+
+    def _fix_in_progress(self, noise_reducer: EventNoiseReducer, correlation_id: str) -> bool:
+        """Return whether fix/retest events indicate an unresolved fix cycle."""
+        summary = noise_reducer.summary()
+        counts = summary.get("event_counts", {})
+        if not isinstance(counts, dict):
+            return False
+        requested = int(counts.get(str(EventType.FIX_REQUESTED), 0))
+        applied = int(counts.get(str(EventType.FIX_APPLIED), 0))
+        retests = int(counts.get(str(EventType.RETEST_REQUESTED), 0))
+        passed = int(counts.get(str(EventType.TEST_EXECUTION_PASSED), 0))
+        halted = int(counts.get(str(EventType.WORKFLOW_HALTED), 0))
+        return (
+            requested > 0 and passed == 0 and (requested > applied or applied > retests or halted)
         )
 
     def _event_count(self, noise_reducer: EventNoiseReducer, event_type: EventType) -> int:

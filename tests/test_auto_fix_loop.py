@@ -3,6 +3,7 @@ from pathlib import Path
 
 from multi_agent_lab.agents.coder_agent import CoderAgent
 from multi_agent_lab.agents.file_agent import FileAgent
+from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
 from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_execution_agent import (
     TesterExecutionAgent as ExecutionAgent,
@@ -59,13 +60,18 @@ async def test_pytest_failure_generates_fix_requested() -> None:
     graph_store, task_id = graph_with_execution_task()
     coordinator = TaskCoordinatorAgent("coordinator", bus, graph_store)
     requested = await bus.subscribe(EventType.FIX_REQUESTED)
+    task_ready = await bus.subscribe(EventType.TASK_READY)
 
     await coordinator.handle_message(execution_failure(task_id))
 
     event = await requested.get()
+    ready = await task_ready.get()
     assert event.content["required_capability"] == Capability.CODING.value
     assert event.content["payload"]["type"] == "fix"
     assert event.content["payload"]["path"] == "README.md"
+    assert event.metadata["failed_command"] == "pytest"
+    assert event.metadata["fix_attempt"] == 1
+    assert ready.content["payload"]["type"] == "fix"
 
 
 async def test_coder_proposes_fix_using_stderr() -> None:
@@ -193,6 +199,34 @@ async def test_workflow_does_not_halt_until_fix_retries_exhausted() -> None:
     await coordinator.handle_message(execution_failure(task_id))
     event = await halted.get()
     assert event.content["reason"] == "max_fix_attempts_exceeded"
+
+
+async def test_event_limit_does_not_cut_active_fix_loop() -> None:
+    bus = MessageBus()
+    halted = await bus.subscribe(EventType.WORKFLOW_HALTED)
+    supervisor = SupervisorAgent("supervisor", bus, max_events_per_correlation=1)
+
+    await supervisor.handle_message(
+        Message(
+            sender="tester",
+            type=EventType.TEST_EXECUTION_FAILED,
+            content={},
+            correlation_id="c",
+        )
+    )
+    await supervisor.handle_message(
+        Message(sender="coordinator", type=EventType.FIX_REQUESTED, content={}, correlation_id="c")
+    )
+    await supervisor.handle_message(
+        Message(sender="coder", type=EventType.FIX_PROPOSED, content={}, correlation_id="c")
+    )
+
+    try:
+        await asyncio.wait_for(halted.get(), timeout=0.05)
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("event limit interrupted an active fix loop")
 
 
 async def test_runtime_summary_excludes_pytest_cache(tmp_path: Path) -> None:

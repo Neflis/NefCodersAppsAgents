@@ -11,6 +11,8 @@ DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_DATABASE_URL = "sqlite:///multi_agent_lab.db"
 DEFAULT_OLLAMA_TIMEOUT_SECONDS = 10.0
 DEFAULT_USE_MOCK_LLM = True
+DEFAULT_MAX_EVENTS_PER_WORKFLOW = 200
+DEFAULT_MAX_FIX_ATTEMPTS = 2
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -41,6 +43,8 @@ class Settings:
     ollama_timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS
     use_mock_llm: bool = DEFAULT_USE_MOCK_LLM
     database_url: str = DEFAULT_DATABASE_URL
+    max_events_per_workflow: int = DEFAULT_MAX_EVENTS_PER_WORKFLOW
+    max_fix_attempts: int = DEFAULT_MAX_FIX_ATTEMPTS
 
 
 def load_settings(env_file: str | Path = ".env") -> Settings:
@@ -58,6 +62,10 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
         use_mock_llm=os.getenv("USE_MOCK_LLM", str(DEFAULT_USE_MOCK_LLM)).lower()
         in {"1", "true", "yes", "on"},
         database_url=os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL),
+        max_events_per_workflow=int(
+            os.getenv("MAX_EVENTS_PER_WORKFLOW", str(DEFAULT_MAX_EVENTS_PER_WORKFLOW))
+        ),
+        max_fix_attempts=int(os.getenv("MAX_FIX_ATTEMPTS", str(DEFAULT_MAX_FIX_ATTEMPTS))),
     )
 
 

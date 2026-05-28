@@ -152,6 +152,12 @@ Ejecutar validacion real controlada dentro del workspace:
 python -m multi_agent_lab run --goal "Crea una pequena API Flask TODO" --ollama --timeout 600 --allow-execution
 ```
 
+Puedes ajustar los limites del supervisor y del auto-fix:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una pequena API Flask TODO con tests basicos" --ollama --timeout 900 --allow-execution --max-events 300 --max-fix-attempts 2
+```
+
 Usar un workspace sandbox especifico:
 
 ```powershell
@@ -233,7 +239,9 @@ TEST_EXECUTION_FAILED
   -> pytest se ejecuta otra vez
 ```
 
-`max_fix_attempts` es 2 por defecto. Si las correcciones no consiguen que la validacion pase, el workflow termina con `WORKFLOW_HALTED` y `final_failure_reason=max_fix_attempts_exceeded`.
+`max_fix_attempts` es 2 por defecto y `MAX_EVENTS_PER_WORKFLOW` es 200. Tambien puedes configurarlos mediante `.env` o CLI con `--max-fix-attempts` y `--max-events`.
+
+Los eventos `FIX_REQUESTED`, `FIX_PROPOSED`, `FIX_APPLIED` y `RETEST_REQUESTED` cuentan como progreso real: el supervisor no debe cortar el workflow por limite de eventos mientras haya un fix en curso. Si las correcciones no consiguen que la validacion pase, el workflow termina con `WORKFLOW_HALTED` y `final_failure_reason=max_fix_attempts_exceeded`.
 
 Limites actuales:
 

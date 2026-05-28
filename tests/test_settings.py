@@ -9,6 +9,8 @@ def test_load_settings_reads_env_file(tmp_path, monkeypatch) -> None:
                 "OLLAMA_BASE_URL=http://localhost:11435",
                 "OLLAMA_MODEL=test-model",
                 "DATABASE_URL=sqlite:///custom.db",
+                "MAX_EVENTS_PER_WORKFLOW=300",
+                "MAX_FIX_ATTEMPTS=4",
             ]
         ),
         encoding="utf-8",
@@ -22,3 +24,5 @@ def test_load_settings_reads_env_file(tmp_path, monkeypatch) -> None:
     assert settings.ollama_base_url == "http://localhost:11435"
     assert settings.ollama_model == "test-model"
     assert settings.database_url == "sqlite:///custom.db"
+    assert settings.max_events_per_workflow == 300
+    assert settings.max_fix_attempts == 4

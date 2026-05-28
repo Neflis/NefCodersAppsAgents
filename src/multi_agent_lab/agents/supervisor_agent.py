@@ -31,7 +31,7 @@ class SupervisorAgent(BaseAgent):
         name: str,
         bus,
         event_logger=None,
-        max_events_per_correlation: int = 50,
+        max_events_per_correlation: int = 200,
         max_failures_per_correlation: int = 3,
         max_retries_per_correlation: int = 5,
         noise_reducer: EventNoiseReducer | None = None,
@@ -45,6 +45,7 @@ class SupervisorAgent(BaseAgent):
         self._failure_counts: Counter[str] = Counter()
         self._retry_counts: Counter[str] = Counter()
         self._halted: set[str] = set()
+        self._fix_in_progress: set[str] = set()
 
     async def handle_message(self, message: Message) -> None:
         """Observe events and publish WORKFLOW_HALTED when limits are exceeded."""
@@ -55,6 +56,11 @@ class SupervisorAgent(BaseAgent):
             return
 
         self._event_counts[correlation_id] += 1
+        if self._is_fix_progress(message):
+            self._fix_in_progress.add(correlation_id)
+            self._event_counts[correlation_id] = 0
+        if message.type == EventType.TEST_EXECUTION_PASSED:
+            self._fix_in_progress.discard(correlation_id)
         if message.type in self.failure_events:
             self._failure_counts[correlation_id] += 1
         if message.type == EventType.TASK_RETRIED:
@@ -63,9 +69,11 @@ class SupervisorAgent(BaseAgent):
         too_many_events = self._event_counts[correlation_id] > self.max_events_per_correlation
         too_many_failures = self._failure_counts[correlation_id] > self.max_failures_per_correlation
         too_many_retries = self._retry_counts[correlation_id] > self.max_retries_per_correlation
+        if too_many_events and correlation_id in self._fix_in_progress:
+            return
         if too_many_events or too_many_failures or too_many_retries:
             self._halted.add(correlation_id)
-            reason = "event_limit"
+            reason = "max_events_exceeded"
             if too_many_failures:
                 reason = "failure_limit"
             if too_many_retries:
@@ -78,3 +86,12 @@ class SupervisorAgent(BaseAgent):
                 },
                 source=message,
             )
+
+    def _is_fix_progress(self, message: Message) -> bool:
+        """Return whether an event represents progress in the auto-fix loop."""
+        return message.type in {
+            EventType.FIX_REQUESTED,
+            EventType.FIX_PROPOSED,
+            EventType.FIX_APPLIED,
+            EventType.RETEST_REQUESTED,
+        }
