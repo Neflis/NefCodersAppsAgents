@@ -4,14 +4,16 @@ Sistema multiagente local y asincrono en Python, preparado para crecer hacia una
 
 ## Objetivo actual
 
-La fase actual demuestra una red multiagente autonoma basada en eventos:
+La fase actual demuestra una red multiagente autonoma basada en eventos y un grafo dinamico de tareas:
 
 - Bus de mensajes con `asyncio`.
 - Agentes desacoplados que escuchan eventos y publican nuevos eventos.
 - `correlation_id`, `causation_id` y `metadata` en cada mensaje.
+- `TaskGraph` para descomponer objetivos en tareas con dependencias.
+- Modelo de capabilities para que los trabajadores reclamen tareas compatibles.
 - Persistencia SQLite para `messages`, `tasks` y `agent_events`.
-- Cola de tareas con cambios de estado persistidos.
-- Agentes locales: planner, coder, reviewer, file, tester y supervisor.
+- Persistencia de snapshots del grafo en `task_graphs`.
+- Agentes locales: planner, coder, reviewer, file, tester, coordinator y supervisor.
 - Logger de eventos de agentes.
 - Configuracion mediante `.env`.
 - Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
@@ -55,18 +57,36 @@ DATABASE_URL=sqlite:///multi_agent_lab.db
 python -m multi_agent_lab.main --mode demo_mock
 ```
 
-Este modo no llama a Ollama. La demo publica `GOAL_SUBMITTED` y la red genera un `README.md` de ejemplo dentro de `./workspace/`:
+Este modo no llama a Ollama. La demo publica `GOAL_SUBMITTED` y la red genera un `README.md` de ejemplo dentro de `./workspace/`.
+
+Objetivo de demo:
+
+```text
+Crear una pequena documentacion README para una app TODO
+```
+
+El planner descompone el objetivo en un `TaskGraph`:
+
+```text
+1. Crear borrador README        capability: coding
+2. Revisar README               capability: reviewing
+3. Escribir README en workspace capability: file_write
+4. Validar existencia           capability: testing_mock
+```
+
+Flujo de eventos:
 
 ```text
 GOAL_SUBMITTED
-  -> PlannerAgent publica TASK_CREATED
-  -> CoderAgent publica CODE_PROPOSED
-  -> ReviewerAgent publica REVIEW_APPROVED
-  -> FileAgent escribe con FileTool y publica FILE_WRITTEN
-  -> TesterAgent simula validacion y publica TEST_PASSED
+  -> PlannerAgent publica GOAL_DECOMPOSED, TASK_GRAPH_UPDATED y TASK_READY
+  -> Workers compatibles publican TASK_CLAIMED
+  -> Workers publican TASK_COMPLETED o TASK_FAILED
+  -> TaskCoordinatorAgent libera dependientes con TASK_READY
+  -> FileAgent escribe con FileTool
+  -> TesterAgent simula validacion con TEST_PASSED
 ```
 
-Ningun agente llama directamente a otro agente. Todos reaccionan de forma autonoma a eventos del `MessageBus`. `SupervisorAgent` escucha `*` y puede publicar `WORKFLOW_HALTED` si detecta demasiados eventos o errores repetidos.
+Ningun agente llama directamente a otro agente. Todos reaccionan de forma autonoma a eventos del `MessageBus`. `SupervisorAgent` escucha `*` y puede publicar `WORKFLOW_HALTED` si detecta demasiados eventos, retries o errores repetidos.
 
 ## Ejecutar demo con Ollama
 
@@ -96,6 +116,20 @@ Limites actuales:
 - No hay borrado de archivos.
 - No hay ejecucion de comandos.
 - No hay acceso libre al sistema de archivos.
+
+## TaskGraph y capabilities
+
+Cada goal crea un `TaskGraph` identificado por `correlation_id`. Cada `TaskNode` contiene:
+
+- dependencias
+- prioridad
+- estado: `PENDING`, `READY`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`, `FAILED`, `CANCELLED`
+- owner opcional
+- numero de retries
+- timestamps
+- `required_capability`
+
+Los agentes trabajadores no reciben tareas asignadas. Escuchan `TASK_READY`, revisan `required_capability` y publican `TASK_CLAIMED` si son compatibles. El coordinator actualiza el grafo y publica nuevas tareas listas cuando sus dependencias se completan.
 
 ## Ejecutar tests
 

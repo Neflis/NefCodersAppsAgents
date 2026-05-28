@@ -11,13 +11,14 @@ from multi_agent_lab.agents.file_agent import FileAgent
 from multi_agent_lab.agents.planner_agent import PlannerAgent
 from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
 from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
+from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent
 from multi_agent_lab.config.settings import load_settings
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.sqlite_store import SQLiteStore
-from multi_agent_lab.core.task_queue import TaskQueue
+from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.llm.ollama_client import OllamaClient
 from multi_agent_lab.tools.file_tool import FileTool
@@ -26,12 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 async def run_demo(mode: str = "demo_mock") -> None:
-    """Run the autonomous event-driven demo."""
+    """Run the autonomous task graph demo."""
     settings = load_settings()
     store = SQLiteStore(settings.database_url)
     event_logger = AgentEventLogger(store)
     bus = MessageBus(store)
-    task_queue = TaskQueue(store)
+    graph_store = TaskGraphStore(store)
     workspace = WorkspaceManager("workspace")
     file_tool = FileTool(workspace)
 
@@ -41,12 +42,14 @@ async def run_demo(mode: str = "demo_mock") -> None:
         logger.info("Ollama no disponible; se usara respuesta local simulada.")
         use_ollama = False
 
+    test_results = await bus.subscribe(EventType.TEST_PASSED)
     agents = [
-        PlannerAgent("planner", bus, task_queue, event_logger),
+        PlannerAgent("planner", bus, graph_store, event_logger),
         CoderAgent("coder", bus, event_logger, ollama_client, use_ollama),
-        ReviewerAgent("reviewer", bus, event_logger),
-        FileAgent("file_agent", bus, file_tool, event_logger),
-        TesterAgent("tester", bus, event_logger),
+        ReviewerAgent("reviewer", bus, graph_store, event_logger),
+        FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
+        TesterAgent("tester", bus, file_tool, event_logger),
+        TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),
         SupervisorAgent("supervisor", bus, event_logger),
     ]
 
@@ -59,13 +62,13 @@ async def run_demo(mode: str = "demo_mock") -> None:
                 sender="demo",
                 type=EventType.GOAL_SUBMITTED,
                 content={
-                    "goal": "Generar README.md para una app de ejemplo",
+                    "goal": "Crear una pequena documentacion README para una app TODO",
                     "path": "README.md",
                 },
                 metadata={"mode": mode},
             )
         )
-        await asyncio.sleep(0.8)
+        await asyncio.wait_for(test_results.get(), timeout=3)
     finally:
         for agent in agents:
             await agent.stop()

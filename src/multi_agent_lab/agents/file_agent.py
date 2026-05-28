@@ -6,47 +6,72 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
+from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
+from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.tools.file_tool import FileTool, FileToolError
 
 logger = logging.getLogger(__name__)
 
 
 class FileAgent(BaseAgent):
-    """Agent that listens for approved write actions and uses FileTool."""
+    """Agent that claims file write tasks and uses FileTool."""
 
-    subscribed_events = (EventType.REVIEW_APPROVED,)
+    subscribed_events = (EventType.TASK_READY,)
+    capabilities = (Capability.FILE_WRITE.value,)
 
     def __init__(
         self,
         name: str,
         bus: MessageBus,
         file_tool: FileTool,
+        graph_store: TaskGraphStore,
         event_logger: AgentEventLogger | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.file_tool = file_tool
+        self.graph_store = graph_store
 
     async def handle_message(self, message: Message) -> None:
-        """Write approved content to the workspace."""
-        if message.content.get("action") != "write_file":
+        """Claim compatible file tasks and write approved content."""
+        if not self.can_claim(message):
             return
+        await self.claim_task(message)
 
-        path = str(message.content["path"])
-        logger.info("Escribiendo archivo aprobado path=%s", path)
+        graph = self.graph_store.get(message.correlation_id or "")
+        dependency_results = graph.dependency_results(str(message.content["task_id"]))
+        approved = dependency_results[-1] if dependency_results else {}
+        path = str(
+            approved.get(
+                "path",
+                message.content.get("payload", {}).get("path", "README.md"),
+            )
+        )
+        logger.info("Escribiendo archivo task_id=%s path=%s", message.content["task_id"], path)
         try:
-            written_path = self.file_tool.write_file(path, str(message.content["content"]))
-        except FileToolError as error:
+            written_path = self.file_tool.write_file(path, str(approved["content"]))
+        except (KeyError, FileToolError) as error:
             await self.publish(
                 EventType.FILE_WRITE_FAILED,
                 {"task_id": message.content["task_id"], "path": path, "error": str(error)},
                 source=message,
             )
+            await self.publish(
+                EventType.TASK_FAILED,
+                {"task_id": message.content["task_id"], "error": str(error)},
+                source=message,
+            )
             return
 
+        result = {"path": written_path}
         await self.publish(
             EventType.FILE_WRITTEN,
-            {"task_id": message.content["task_id"], "path": written_path},
+            {"task_id": message.content["task_id"], **result},
+            source=message,
+        )
+        await self.publish(
+            EventType.TASK_COMPLETED,
+            {"task_id": message.content["task_id"], "result": result, "owner": self.name},
             source=message,
         )

@@ -21,6 +21,7 @@ class SupervisorAgent(BaseAgent):
         EventType.REVIEW_REJECTED,
         EventType.TEST_FAILED,
         EventType.TASK_FAILED,
+        EventType.TASK_RETRIED,
     }
 
     def __init__(
@@ -28,14 +29,17 @@ class SupervisorAgent(BaseAgent):
         name: str,
         bus,
         event_logger=None,
-        max_events_per_correlation: int = 25,
+        max_events_per_correlation: int = 50,
         max_failures_per_correlation: int = 3,
+        max_retries_per_correlation: int = 5,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.max_events_per_correlation = max_events_per_correlation
         self.max_failures_per_correlation = max_failures_per_correlation
+        self.max_retries_per_correlation = max_retries_per_correlation
         self._event_counts: Counter[str] = Counter()
         self._failure_counts: Counter[str] = Counter()
+        self._retry_counts: Counter[str] = Counter()
         self._halted: set[str] = set()
 
     async def handle_message(self, message: Message) -> None:
@@ -48,16 +52,24 @@ class SupervisorAgent(BaseAgent):
         self._event_counts[correlation_id] += 1
         if message.type in self.failure_events:
             self._failure_counts[correlation_id] += 1
+        if message.type == EventType.TASK_RETRIED:
+            self._retry_counts[correlation_id] += 1
 
         too_many_events = self._event_counts[correlation_id] > self.max_events_per_correlation
         too_many_failures = self._failure_counts[correlation_id] > self.max_failures_per_correlation
-        if too_many_events or too_many_failures:
+        too_many_retries = self._retry_counts[correlation_id] > self.max_retries_per_correlation
+        if too_many_events or too_many_failures or too_many_retries:
             self._halted.add(correlation_id)
+            reason = "event_limit"
+            if too_many_failures:
+                reason = "failure_limit"
+            if too_many_retries:
+                reason = "retry_limit"
             await self.publish(
                 EventType.WORKFLOW_HALTED,
                 {
                     "correlation_id": correlation_id,
-                    "reason": "event_limit" if too_many_events else "failure_limit",
+                    "reason": reason,
                 },
                 source=message,
             )

@@ -7,10 +7,11 @@ from multi_agent_lab.agents.file_agent import FileAgent
 from multi_agent_lab.agents.planner_agent import PlannerAgent
 from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
 from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
+from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent as ValidationAgent
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
-from multi_agent_lab.core.task_queue import TaskQueue
+from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.tools.file_tool import FileTool
 
@@ -26,7 +27,14 @@ async def test_supervisor_receives_all_events() -> None:
 
 
 def test_agents_do_not_call_each_other_directly() -> None:
-    agent_classes = [PlannerAgent, CoderAgent, ReviewerAgent, FileAgent, ValidationAgent]
+    agent_classes = [
+        PlannerAgent,
+        CoderAgent,
+        ReviewerAgent,
+        FileAgent,
+        ValidationAgent,
+        TaskCoordinatorAgent,
+    ]
 
     for agent_class in agent_classes:
         source = inspect.getsource(agent_class.handle_message)
@@ -40,15 +48,16 @@ def test_agents_do_not_call_each_other_directly() -> None:
 
 async def test_complete_event_driven_demo_writes_file(tmp_path: Path) -> None:
     bus = MessageBus()
-    task_queue = TaskQueue()
+    graph_store = TaskGraphStore()
     file_tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
     test_results = await bus.subscribe(EventType.TEST_PASSED)
     agents: list[BaseAgent] = [
-        PlannerAgent("planner", bus, task_queue),
+        PlannerAgent("planner", bus, graph_store),
         CoderAgent("coder", bus),
-        ReviewerAgent("reviewer", bus),
-        FileAgent("file_agent", bus, file_tool),
-        ValidationAgent("tester", bus),
+        ReviewerAgent("reviewer", bus, graph_store),
+        FileAgent("file_agent", bus, file_tool, graph_store),
+        ValidationAgent("tester", bus, file_tool),
+        TaskCoordinatorAgent("coordinator", bus, graph_store),
         SupervisorAgent("supervisor", bus),
     ]
 
@@ -60,7 +69,10 @@ async def test_complete_event_driven_demo_writes_file(tmp_path: Path) -> None:
             Message(
                 sender="test",
                 type=EventType.GOAL_SUBMITTED,
-                content={"goal": "Generar README.md para una app de ejemplo", "path": "README.md"},
+                content={
+                    "goal": "Crear una pequena documentacion README para una app TODO",
+                    "path": "README.md",
+                },
             )
         )
         result = await test_results.get()
@@ -68,7 +80,7 @@ async def test_complete_event_driven_demo_writes_file(tmp_path: Path) -> None:
         assert result.type == EventType.TEST_PASSED
         assert result.correlation_id is not None
         assert file_tool.exists("README.md")
-        assert "App de ejemplo" in file_tool.read_file("README.md")
+        assert "TODO App" in file_tool.read_file("README.md")
     finally:
         for agent in agents:
             await agent.stop()

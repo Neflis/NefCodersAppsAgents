@@ -1,4 +1,4 @@
-"""Coder agent that proposes file content for coding tasks."""
+"""Coder agent that proposes content for coding tasks."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
+from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.llm.ollama_client import OllamaClient, OllamaClientError
@@ -14,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class CoderAgent(BaseAgent):
-    """Agent that listens for coding tasks and proposes content."""
+    """Agent that claims coding tasks and proposes content."""
 
-    subscribed_events = (EventType.TASK_CREATED,)
+    subscribed_events = (EventType.TASK_READY,)
+    capabilities = (Capability.CODING.value,)
 
     def __init__(
         self,
@@ -31,15 +33,17 @@ class CoderAgent(BaseAgent):
         self.use_ollama = use_ollama
 
     async def handle_message(self, message: Message) -> None:
-        """Generate a code proposal for coding tasks."""
-        if message.content.get("task_type") != "coding":
-            logger.info("Tarea ignorada por tipo: %s", message.content.get("task_type"))
+        """Claim compatible coding tasks and complete them with a proposal."""
+        if not self.can_claim(message):
             return
+        await self.claim_task(message)
 
-        target_path = str(message.content.get("path", "README.md"))
-        title = str(message.content.get("title", "Generar README.md"))
+        target_path = str(message.content.get("payload", {}).get("path", "README.md"))
+        title = str(message.content.get("title", "Crear borrador README"))
         logger.info(
-            "Generando propuesta task_id=%s path=%s", message.content["task_id"], target_path
+            "Generando borrador task_id=%s path=%s",
+            message.content["task_id"],
+            target_path,
         )
 
         proposed_content = self._mock_file_content(title)
@@ -49,32 +53,35 @@ class CoderAgent(BaseAgent):
             except OllamaClientError as error:
                 logger.info("Ollama no disponible: %s", error)
 
+        result = {"path": target_path, "content": proposed_content}
         await self.publish(
             EventType.CODE_PROPOSED,
-            {
-                "task_id": message.content["task_id"],
-                "action": message.content.get("action", "write_file"),
-                "path": target_path,
-                "content": proposed_content,
-            },
+            {"task_id": message.content["task_id"], **result},
+            source=message,
+        )
+        await self.publish(
+            EventType.TASK_COMPLETED,
+            {"task_id": message.content["task_id"], "result": result, "owner": self.name},
             source=message,
         )
 
     def _mock_file_content(self, title: str) -> str:
-        """Return deterministic README content for the demo."""
+        """Return deterministic README content for the TODO demo."""
         return "\n".join(
             [
-                "# App de ejemplo",
+                "# TODO App",
                 "",
-                "Proyecto generado por la red multiagente local.",
+                "Documentacion inicial para una pequena aplicacion TODO.",
                 "",
                 "## Objetivo",
                 "",
                 title,
                 "",
-                "## Uso",
+                "## Funcionalidades previstas",
                 "",
-                "Describe aqui como ejecutar la app cuando exista implementacion.",
+                "- Crear tareas",
+                "- Marcar tareas como completadas",
+                "- Listar tareas pendientes",
                 "",
             ]
         )

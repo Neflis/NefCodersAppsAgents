@@ -14,6 +14,7 @@ class BaseAgent:
     """Base class for autonomous event-driven agents."""
 
     subscribed_events: tuple[str | EventType, ...] = ()
+    capabilities: tuple[str, ...] = ()
 
     def __init__(
         self, name: str, bus: MessageBus, event_logger: AgentEventLogger | None = None
@@ -21,6 +22,7 @@ class BaseAgent:
         self.name = name
         self.bus = bus
         self.event_logger = event_logger
+        self.claimed_tasks: set[str] = set()
         self._running = False
         self._inbox: asyncio.Queue[Message] | None = None
         self._loop_task: asyncio.Task[None] | None = None
@@ -33,6 +35,30 @@ class BaseAgent:
         self._inbox = await self.bus.subscribe_many(self.subscribed_events)
         self._loop_task = asyncio.create_task(self._run(), name=f"{self.name}-agent")
         await self._log_event("agent_started", {"events": [str(e) for e in self.subscribed_events]})
+
+    def can_claim(self, message: Message) -> bool:
+        """Return whether this agent can claim a ready task event."""
+        task_id = str(message.content.get("task_id", ""))
+        required_capability = str(message.content.get("required_capability", ""))
+        return (
+            task_id not in self.claimed_tasks
+            and required_capability in self.capabilities
+            and message.content.get("status") == "READY"
+        )
+
+    async def claim_task(self, message: Message) -> None:
+        """Mark a task as locally claimed and publish TASK_CLAIMED."""
+        task_id = str(message.content["task_id"])
+        self.claimed_tasks.add(task_id)
+        await self.publish(
+            EventType.TASK_CLAIMED,
+            {
+                "task_id": task_id,
+                "required_capability": message.content["required_capability"],
+                "owner": self.name,
+            },
+            source=message,
+        )
 
     async def stop(self) -> None:
         """Stop the agent message loop."""

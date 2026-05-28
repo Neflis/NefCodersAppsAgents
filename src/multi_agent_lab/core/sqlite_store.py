@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from multi_agent_lab.core.message import Message
 from multi_agent_lab.core.task import Task, TaskStatus
+from multi_agent_lab.core.task_graph import TaskGraph
 
 
 def database_path_from_url(database_url: str) -> str:
@@ -72,6 +73,13 @@ class SQLiteStore:
                 event_type TEXT NOT NULL,
                 details TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS task_graphs (
+                correlation_id TEXT PRIMARY KEY,
+                goal_id TEXT NOT NULL,
+                graph TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             """)
         self._migrate_messages_table()
@@ -166,9 +174,24 @@ class SQLiteStore:
         )
         self._connection.commit()
 
+    def save_task_graph(self, graph: TaskGraph) -> None:
+        """Persist a task graph snapshot."""
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO task_graphs (correlation_id, goal_id, graph, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                graph.goal.correlation_id,
+                graph.goal.id,
+                json.dumps(graph.to_dict(), ensure_ascii=True),
+            ),
+        )
+        self._connection.commit()
+
     def fetch_all(self, table: str) -> list[sqlite3.Row]:
         """Fetch all rows from one supported table."""
-        if table not in {"messages", "tasks", "agent_events"}:
+        if table not in {"messages", "tasks", "agent_events", "task_graphs"}:
             raise ValueError(f"Unsupported table: {table}")
         cursor = self._connection.execute(f"SELECT * FROM {table}")
         return list(cursor.fetchall())
