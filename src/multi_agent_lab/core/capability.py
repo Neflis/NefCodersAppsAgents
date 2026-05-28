@@ -13,3 +13,4 @@ class Capability(StrEnum):
     REVIEWING = "reviewing"
     FILE_WRITE = "file_write"
     TESTING_MOCK = "testing_mock"
+    TESTING_EXECUTION = "testing_execution"

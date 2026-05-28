@@ -158,6 +158,23 @@ class CoderAgent(BaseAgent):
                     "",
                 ]
             )
+        if target_path == "tests/test_app.py" or artifact == "pytest_tests":
+            return "\n".join(
+                [
+                    "from pathlib import Path",
+                    "",
+                    "",
+                    "def test_project_files_are_coherent():",
+                    "    app = Path('app.py').read_text(encoding='utf-8')",
+                    "    requirements = Path('requirements.txt').read_text(encoding='utf-8')",
+                    "    readme = Path('README.md').read_text(encoding='utf-8')",
+                    "    assert 'from flask import' in app",
+                    "    assert 'Flask' in requirements",
+                    "    assert 'Flask TODO API' in readme",
+                    "    assert '/todos' in readme",
+                    "",
+                ]
+            )
         if artifact == "design":
             return "Estructura: app.py, requirements.txt y README.md para API Flask TODO."
         return "\n".join(

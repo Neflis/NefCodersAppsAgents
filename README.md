@@ -23,7 +23,7 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Compresion de contexto y reduccion de ruido de eventos repetidos.
 - Salidas LLM JSON robustas con extraccion, reparacion simple, schemas y trazas en `workspace/.traces/`.
 
-No se ejecutan comandos del sistema, no se usa Docker y no se permite borrado de archivos.
+La ejecucion de comandos reales esta desactivada por defecto. Cuando se activa explicitamente, solo se permite una whitelist estricta dentro del workspace. No se usa Docker, no se usa git automatico y no se permite borrado de archivos.
 
 ## Requisitos
 
@@ -146,6 +146,12 @@ Ejecutar un objetivo con Ollama real:
 python -m multi_agent_lab run --goal "Crear README para app TODO" --ollama
 ```
 
+Ejecutar validacion real controlada dentro del workspace:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una pequena API Flask TODO" --ollama --timeout 600 --allow-execution
+```
+
 Usar un workspace sandbox especifico:
 
 ```powershell
@@ -182,8 +188,35 @@ Limites actuales:
 - Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`.
 - Tamano maximo por archivo: 1 MB.
 - No hay borrado de archivos.
-- No hay ejecucion de comandos.
+- No hay ejecucion de comandos salvo que uses `--allow-execution`.
 - No hay acceso libre al sistema de archivos.
+
+## Ejecucion controlada
+
+`--allow-execution` activa `TesterExecutionAgent` y `CommandTool`. Esta fase existe para validar proyectos generados, pero sigue una politica de seguridad cerrada:
+
+- `shell=False` obligatorio.
+- `cwd` siempre es el workspace.
+- timeout configurable en la herramienta.
+- stdout y stderr se truncan.
+- rutas fuera del workspace se bloquean.
+- argumentos con tokens sospechosos se rechazan.
+
+Comandos permitidos inicialmente:
+
+```text
+python app.py
+pytest
+pip check
+```
+
+Comandos bloqueados:
+
+```text
+cmd, powershell, bash, curl, wget, rm, del, git, npm, docker
+```
+
+La ejecucion se comunica por eventos: `TEST_EXECUTION_REQUESTED`, `TEST_EXECUTION_STARTED`, `TEST_EXECUTION_PASSED` y `TEST_EXECUTION_FAILED`. Si falla, el resultado incluye salida truncada y feedback sobre imports faltantes, errores de sintaxis o timeout. El coordinator mantiene un maximo de 2 retries automaticos antes de bloquear la tarea.
 
 ## TaskGraph y capabilities
 

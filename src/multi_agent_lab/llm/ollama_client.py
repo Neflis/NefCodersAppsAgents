@@ -228,6 +228,18 @@ class OllamaClient:
                 )
             elif target_path == "requirements.txt":
                 content = "Flask>=3.0\n"
+            elif target_path == "tests/test_app.py":
+                content = (
+                    "from pathlib import Path\n\n\n"
+                    "def test_project_files_are_coherent():\n"
+                    "    app = Path('app.py').read_text(encoding='utf-8')\n"
+                    "    requirements = Path('requirements.txt').read_text(encoding='utf-8')\n"
+                    "    readme = Path('README.md').read_text(encoding='utf-8')\n"
+                    "    assert 'from flask import' in app\n"
+                    "    assert 'Flask' in requirements\n"
+                    "    assert 'Flask TODO API' in readme\n"
+                    "    assert '/todos' in readme\n"
+                )
             elif target_path == "README.md" or "README.md" in prompt:
                 content = (
                     "# Flask TODO API\n\n"

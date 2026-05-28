@@ -24,6 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--workspace", default="workspace", help="Workspace sandbox path.")
     run_parser.add_argument("--timeout", type=float, default=10.0, help="Global timeout seconds.")
     run_parser.add_argument("--verbose", action="store_true", help="Show detailed event logs.")
+    run_parser.add_argument(
+        "--allow-execution",
+        action="store_true",
+        help="Enable controlled command execution inside the workspace.",
+    )
 
     parser.add_argument(
         "--mode",
@@ -51,6 +56,7 @@ async def run_from_args(args: argparse.Namespace) -> RuntimeSummary:
             use_mock_llm=not args.ollama,
             timeout_seconds=args.timeout,
             verbose=args.verbose,
+            allow_execution=args.allow_execution,
         )
         return await runtime.run()
 

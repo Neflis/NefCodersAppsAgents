@@ -21,6 +21,7 @@ class SupervisorAgent(BaseAgent):
         EventType.FILE_WRITE_FAILED,
         EventType.REVIEW_REJECTED,
         EventType.TEST_FAILED,
+        EventType.TEST_EXECUTION_FAILED,
         EventType.TASK_FAILED,
         EventType.TASK_RETRIED,
     }

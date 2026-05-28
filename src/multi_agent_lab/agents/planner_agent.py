@@ -46,12 +46,14 @@ class PlannerAgent(BaseAgent):
             message.content.get("goal", "Crear una pequena documentacion README para una app TODO")
         )
         target_path = str(message.content.get("path", "README.md"))
+        allow_execution = bool(message.metadata.get("allow_execution", False))
         decision = await self._decide(message)
         graph = self._build_readme_graph(
             goal_title,
             target_path,
             message.correlation_id or message.id,
             decision,
+            allow_execution,
         )
         self.graph_store.add(graph)
         logger.info("Objetivo descompuesto correlation=%s", graph.goal.correlation_id)
@@ -84,11 +86,12 @@ class PlannerAgent(BaseAgent):
         target_path: str,
         correlation_id: str,
         decision: LLMDecision | None = None,
+        allow_execution: bool = False,
     ) -> TaskGraph:
         """Create the README demo graph."""
         graph = TaskGraph(Goal(goal_title, correlation_id))
         if self._is_flask_api_goal(goal_title):
-            return self._build_flask_api_graph(graph)
+            return self._build_flask_api_graph(graph, allow_execution)
 
         task_specs = (
             decision.content
@@ -139,12 +142,12 @@ class PlannerAgent(BaseAgent):
         )
         return graph
 
-    def _build_flask_api_graph(self, graph: TaskGraph) -> TaskGraph:
+    def _build_flask_api_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
         """Create a multi-file Flask TODO API graph."""
         existing_files = self._workspace_files()
         expected_files = {"app.py", "requirements.txt", "README.md"}
         if expected_files.issubset(existing_files):
-            return self._build_existing_flask_review_graph(graph)
+            return self._build_existing_flask_review_graph(graph, allow_execution)
 
         design = graph.add_task(
             TaskNode(
@@ -198,6 +201,29 @@ class PlannerAgent(BaseAgent):
                 priority=6,
             )
         )
+        if allow_execution:
+            tests = graph.add_task(
+                TaskNode(
+                    title="Crear tests minimos",
+                    description="Crear tests pytest seguros para validar archivos generados.",
+                    required_capability=Capability.CODING.value,
+                    payload={"path": "tests/test_app.py", "artifact": "pytest_tests"},
+                    dependencies={review.id},
+                    priority=5,
+                )
+            )
+            graph.add_task(
+                TaskNode(
+                    title="Ejecutar validacion pytest",
+                    description="Ejecutar pytest dentro del workspace con whitelist estricta.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "pytest", "args": []},
+                    dependencies={tests.id},
+                    priority=4,
+                )
+            )
+            return graph
+
         graph.add_task(
             TaskNode(
                 title="Validar existencia de archivos",
@@ -210,7 +236,11 @@ class PlannerAgent(BaseAgent):
         )
         return graph
 
-    def _build_existing_flask_review_graph(self, graph: TaskGraph) -> TaskGraph:
+    def _build_existing_flask_review_graph(
+        self,
+        graph: TaskGraph,
+        allow_execution: bool,
+    ) -> TaskGraph:
         """Create only review and validation tasks for an existing Flask project."""
         review = graph.add_task(
             TaskNode(
@@ -224,6 +254,33 @@ class PlannerAgent(BaseAgent):
                 priority=6,
             )
         )
+        if allow_execution:
+            existing_files = self._workspace_files()
+            dependency_id = review.id
+            if "tests/test_app.py" not in existing_files:
+                tests = graph.add_task(
+                    TaskNode(
+                        title="Crear tests minimos",
+                        description="Crear tests pytest seguros para validar archivos existentes.",
+                        required_capability=Capability.CODING.value,
+                        payload={"path": "tests/test_app.py", "artifact": "pytest_tests"},
+                        dependencies={review.id},
+                        priority=5,
+                    )
+                )
+                dependency_id = tests.id
+            graph.add_task(
+                TaskNode(
+                    title="Ejecutar validacion pytest",
+                    description="Ejecutar pytest dentro del workspace con whitelist estricta.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "pytest", "args": []},
+                    dependencies={dependency_id},
+                    priority=4,
+                )
+            )
+            return graph
+
         graph.add_task(
             TaskNode(
                 title="Validar existencia de archivos existentes",

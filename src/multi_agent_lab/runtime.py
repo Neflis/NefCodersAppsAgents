@@ -15,6 +15,7 @@ from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
 from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
 from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent
+from multi_agent_lab.agents.tester_execution_agent import TesterExecutionAgent
 from multi_agent_lab.config.settings import Settings, load_settings
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.event_noise import EventNoiseReducer
@@ -29,6 +30,7 @@ from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.metrics import LLMCallMetrics, LLMTraceRecorder
 from multi_agent_lab.llm.ollama_client import OllamaClient
+from multi_agent_lab.tools.command_tool import CommandTool
 from multi_agent_lab.tools.file_tool import FileTool
 
 RuntimeStatus = Literal["completed", "halted", "timeout"]
@@ -67,6 +69,7 @@ class AgentRuntime:
         database_url: str | None = None,
         verbose: bool = False,
         max_context_chars: int = 6000,
+        allow_execution: bool = False,
     ) -> None:
         self.goal = goal
         self.workspace_path = workspace_path
@@ -76,6 +79,7 @@ class AgentRuntime:
         self.database_url = database_url or self.settings.database_url
         self.verbose = verbose
         self.max_context_chars = max_context_chars
+        self.allow_execution = allow_execution
 
     async def run(self) -> RuntimeSummary:
         """Run one goal through the autonomous agent network."""
@@ -88,6 +92,7 @@ class AgentRuntime:
         graph_store = TaskGraphStore(store)
         workspace = WorkspaceManager(self.workspace_path)
         file_tool = FileTool(workspace)
+        command_tool = CommandTool(workspace)
         file_awareness = FileAwarenessService(file_tool)
         llm_metrics = LLMCallMetrics()
         trace_recorder = LLMTraceRecorder(workspace.root / ".traces")
@@ -102,6 +107,7 @@ class AgentRuntime:
             bus,
             graph_store,
             file_tool,
+            command_tool,
             file_awareness,
             event_logger,
             context_builder,
@@ -111,13 +117,21 @@ class AgentRuntime:
         )
 
         terminal_inbox = await bus.subscribe_many(
-            (EventType.TEST_PASSED, EventType.WORKFLOW_HALTED, EventType.WORKFLOW_TIMEOUT)
+            (
+                EventType.TEST_EXECUTION_PASSED if self.allow_execution else EventType.TEST_PASSED,
+                EventType.WORKFLOW_HALTED,
+                EventType.WORKFLOW_TIMEOUT,
+            )
         )
         goal_event = Message(
             sender="runtime",
             type=EventType.GOAL_SUBMITTED,
             content={"goal": self.goal, "path": "README.md"},
-            metadata={"workspace": self.workspace_path, "mock": self.use_mock_llm},
+            metadata={
+                "workspace": self.workspace_path,
+                "mock": self.use_mock_llm,
+                "allow_execution": self.allow_execution,
+            },
         )
 
         try:
@@ -147,7 +161,7 @@ class AgentRuntime:
                 )
                 await bus.publish(terminal_event)
 
-            if terminal_event.type == EventType.TEST_PASSED:
+            if terminal_event.type in {EventType.TEST_PASSED, EventType.TEST_EXECUTION_PASSED}:
                 completed = Message(
                     sender="runtime",
                     type=EventType.WORKFLOW_COMPLETED,
@@ -177,6 +191,7 @@ class AgentRuntime:
         bus: MessageBus,
         graph_store: TaskGraphStore,
         file_tool: FileTool,
+        command_tool: CommandTool,
         file_awareness: FileAwarenessService,
         event_logger: AgentEventLogger,
         context_builder: AgentContextBuilder,
@@ -203,7 +218,7 @@ class AgentRuntime:
             llm_metrics,
             trace_recorder,
         )
-        return [
+        agents: list[BaseAgent] = [
             PlannerAgent("planner", bus, graph_store, event_logger, planner_llm, context_builder),
             CoderAgent("coder", bus, event_logger, coder_llm, context_builder),
             ReviewerAgent(
@@ -220,6 +235,12 @@ class AgentRuntime:
             TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),
             SupervisorAgent("supervisor", bus, event_logger, noise_reducer=noise_reducer),
         ]
+        if self.allow_execution:
+            agents.insert(
+                -2,
+                TesterExecutionAgent("tester_execution", bus, command_tool, event_logger),
+            )
+        return agents
 
     def _llm_client(
         self,
