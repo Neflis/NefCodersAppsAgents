@@ -115,6 +115,28 @@ python -m multi_agent_lab.main --mode demo_ollama
 
 Este modo comprueba si Ollama responde en `OLLAMA_BASE_URL`. Si esta disponible, el coder usa el modelo configurado en `OLLAMA_MODEL`. Si no esta disponible, la demo continua con respuesta local simulada.
 
+## CLI runtime
+
+Ejecutar un objetivo con LLM mock:
+
+```powershell
+python -m multi_agent_lab run --goal "Crear README para app TODO" --mock
+```
+
+Ejecutar un objetivo con Ollama real:
+
+```powershell
+python -m multi_agent_lab run --goal "Crear README para app TODO" --ollama
+```
+
+Usar un workspace sandbox especifico:
+
+```powershell
+python -m multi_agent_lab run --goal "Crear README para app TODO" --mock --workspace .\workspace
+```
+
+El runtime publica `WORKFLOW_STARTED`, envia `GOAL_SUBMITTED` y espera hasta `WORKFLOW_COMPLETED`, `WORKFLOW_HALTED` o `WORKFLOW_TIMEOUT`. Al terminar muestra objetivo, tareas completadas, tareas fallidas, archivos creados, duracion y estado final.
+
 ## Workspace seguro
 
 Todas las operaciones de archivos estan limitadas a:

@@ -1,4 +1,4 @@
-"""Demo entrypoint for the async multi-agent lab."""
+"""Command-line interface for the multi-agent runtime."""
 
 from __future__ import annotations
 
@@ -6,109 +6,63 @@ import argparse
 import asyncio
 import logging
 
-from multi_agent_lab.agents.coder_agent import CoderAgent
-from multi_agent_lab.agents.file_agent import FileAgent
-from multi_agent_lab.agents.planner_agent import PlannerAgent
-from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
-from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
-from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
-from multi_agent_lab.agents.tester_agent import TesterAgent
-from multi_agent_lab.config.settings import load_settings
-from multi_agent_lab.core.agent_event_logger import AgentEventLogger
-from multi_agent_lab.core.message import EventType, Message
-from multi_agent_lab.core.message_bus import MessageBus
-from multi_agent_lab.core.sqlite_store import SQLiteStore
-from multi_agent_lab.core.task_graph_store import TaskGraphStore
-from multi_agent_lab.core.workspace_manager import WorkspaceManager
-from multi_agent_lab.llm.context_builder import AgentContextBuilder
-from multi_agent_lab.llm.ollama_client import OllamaClient
-from multi_agent_lab.tools.file_tool import FileTool
+from multi_agent_lab.runtime import AgentRuntime, RuntimeSummary
 
 logger = logging.getLogger(__name__)
 
 
-async def run_demo(mode: str = "demo_mock") -> None:
-    """Run the autonomous task graph demo."""
-    settings = load_settings()
-    store = SQLiteStore(settings.database_url)
-    event_logger = AgentEventLogger(store)
-    bus = MessageBus(store)
-    graph_store = TaskGraphStore(store)
-    workspace = WorkspaceManager("workspace")
-    file_tool = FileTool(workspace)
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser."""
+    parser = argparse.ArgumentParser(description="Run the safe multi-agent runtime.")
+    subparsers = parser.add_subparsers(dest="command")
+    run_parser = subparsers.add_parser("run", help="Run a goal through the agent network.")
+    run_parser.add_argument("--goal", required=True, help="User goal to execute safely.")
+    mode = run_parser.add_mutually_exclusive_group()
+    mode.add_argument("--mock", action="store_true", help="Use mock LLM decisions.")
+    mode.add_argument("--ollama", action="store_true", help="Use real Ollama decisions.")
+    run_parser.add_argument("--workspace", default="workspace", help="Workspace sandbox path.")
+    run_parser.add_argument("--timeout", type=float, default=10.0, help="Global timeout seconds.")
 
-    planner_llm = OllamaClient(
-        settings.ollama_base_url,
-        settings.ollama_model_planner,
-        settings.ollama_timeout_seconds,
-        use_mock=settings.use_mock_llm,
-    )
-    coder_llm = OllamaClient(
-        settings.ollama_base_url,
-        settings.ollama_model_coder,
-        settings.ollama_timeout_seconds,
-        use_mock=settings.use_mock_llm,
-    )
-    reviewer_llm = OllamaClient(
-        settings.ollama_base_url,
-        settings.ollama_model_reviewer,
-        settings.ollama_timeout_seconds,
-        use_mock=settings.use_mock_llm,
-    )
-    use_ollama = mode == "demo_ollama"
-    if use_ollama and not await coder_llm.health_check():
-        logger.info("Ollama no disponible; se usara respuesta local simulada.")
-        use_ollama = False
-    if not use_ollama:
-        planner_llm.use_mock = True
-        coder_llm.use_mock = True
-        reviewer_llm.use_mock = True
-
-    context_builder = AgentContextBuilder(graph_store, file_tool)
-
-    test_results = await bus.subscribe(EventType.TEST_PASSED)
-    agents = [
-        PlannerAgent("planner", bus, graph_store, event_logger, planner_llm, context_builder),
-        CoderAgent("coder", bus, event_logger, coder_llm, context_builder),
-        ReviewerAgent("reviewer", bus, graph_store, event_logger, reviewer_llm, context_builder),
-        FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
-        TesterAgent("tester", bus, file_tool, event_logger),
-        TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),
-        SupervisorAgent("supervisor", bus, event_logger),
-    ]
-
-    try:
-        for agent in agents:
-            await agent.start()
-
-        await bus.publish(
-            Message(
-                sender="demo",
-                type=EventType.GOAL_SUBMITTED,
-                content={
-                    "goal": "Crear una pequena documentacion README para una app TODO",
-                    "path": "README.md",
-                },
-                metadata={"mode": mode},
-            )
-        )
-        await asyncio.wait_for(test_results.get(), timeout=3)
-    finally:
-        for agent in agents:
-            await agent.stop()
-        store.close()
-
-
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Run the async multi-agent demo.")
     parser.add_argument(
         "--mode",
         choices=["demo_mock", "demo_ollama"],
-        default="demo_mock",
-        help="demo_mock avoids Ollama calls; demo_ollama uses Ollama when available.",
+        help="Backward-compatible demo mode.",
     )
-    return parser.parse_args()
+    return parser
+
+
+async def run_demo(mode: str = "demo_mock") -> RuntimeSummary:
+    """Run the default demo through AgentRuntime."""
+    runtime = AgentRuntime(
+        "Crear una pequena documentacion README para una app TODO",
+        use_mock_llm=mode != "demo_ollama",
+    )
+    return await runtime.run()
+
+
+async def run_from_args(args: argparse.Namespace) -> RuntimeSummary:
+    """Run the runtime from parsed CLI arguments."""
+    if args.command == "run":
+        runtime = AgentRuntime(
+            args.goal,
+            workspace_path=args.workspace,
+            use_mock_llm=not args.ollama,
+            timeout_seconds=args.timeout,
+        )
+        return await runtime.run()
+
+    return await run_demo(args.mode or "demo_mock")
+
+
+def print_summary(summary: RuntimeSummary) -> None:
+    """Print a human-readable runtime summary."""
+    print(f"Objetivo: {summary.goal}")
+    print(f"Estado final: {summary.status}")
+    print(f"Tareas completadas: {summary.tasks_completed}")
+    print(f"Tareas fallidas: {summary.tasks_failed}")
+    print(f"Archivos creados: {', '.join(summary.files_created) or '(ninguno)'}")
+    print(f"Duracion: {summary.duration_seconds:.2f}s")
+    print(f"Correlation ID: {summary.correlation_id}")
 
 
 def main() -> None:
@@ -117,8 +71,9 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
     )
-    args = parse_args()
-    asyncio.run(run_demo(args.mode))
+    args = build_parser().parse_args()
+    summary = asyncio.run(run_from_args(args))
+    print_summary(summary)
 
 
 if __name__ == "__main__":
