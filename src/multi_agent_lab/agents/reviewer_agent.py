@@ -13,6 +13,7 @@ from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
 from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
+from multi_agent_lab.llm.schemas import REVIEWER_DECISION_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -157,16 +158,32 @@ class ReviewerAgent(BaseAgent):
                 current_task={"path": path, "content": content},
             ),
             expected_json_output={
-                "action": "approve",
+                "approved": True,
+                "feedback": "",
                 "reasoning_summary": "short text",
-                "confidence": 0.0,
-                "content": {"approved": True},
-                "events_to_publish": [],
-                "task_updates": [],
+            },
+            example_json_output={
+                "approved": True,
+                "feedback": "",
+                "reasoning_summary": "Safe non-empty content.",
             },
         ).render()
         try:
-            return LLMDecision.from_dict(await self.llm_client.generate_json(prompt))
+            data = await self.llm_client.generate_json(prompt, REVIEWER_DECISION_FIELDS)
+            return self._decision_from_schema(data)
         except (InvalidJSONError, OllamaClientError) as error:
             logger.info("Reviewer LLM no disponible; usando validacion determinista: %s", error)
+            self.llm_client.record_fallback()
             return None
+
+    def _decision_from_schema(self, data: dict[str, object]) -> LLMDecision:
+        """Normalize compact reviewer schema to LLMDecision."""
+        if "approved" in data:
+            approved = bool(data.get("approved"))
+            return LLMDecision(
+                action="approve" if approved else "reject",
+                reasoning_summary=str(data.get("reasoning_summary", "")),
+                confidence=1.0,
+                content={"approved": approved, "feedback": str(data.get("feedback", ""))},
+            )
+        return LLMDecision.from_dict(data)

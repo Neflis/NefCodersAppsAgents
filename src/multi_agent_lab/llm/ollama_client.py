@@ -9,13 +9,9 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
-class OllamaClientError(RuntimeError):
-    """Raised when Ollama cannot complete a request."""
-
-
-class InvalidJSONError(OllamaClientError):
-    """Raised when a model returns invalid JSON."""
+from multi_agent_lab.llm.json_extraction import JsonExtractionService
+from multi_agent_lab.llm.metrics import LLMCallMetrics, LLMCallTimer, LLMTraceRecorder
+from multi_agent_lab.llm.ollama_client_types import InvalidJSONError, OllamaClientError
 
 
 @dataclass(slots=True)
@@ -28,6 +24,10 @@ class OllamaClient:
     retries: int = 1
     use_mock: bool = True
     mock_responses: list[dict[str, Any]] = field(default_factory=list)
+    metrics: LLMCallMetrics | None = None
+    trace_recorder: LLMTraceRecorder | None = None
+    agent_name: str = "unknown"
+    extractor: JsonExtractionService = field(default_factory=JsonExtractionService)
 
     async def health_check(self) -> bool:
         """Return whether the Ollama API is reachable."""
@@ -43,26 +43,72 @@ class OllamaClient:
         """Generate text with the configured Ollama model."""
         if self.use_mock:
             return json.dumps(self._next_mock_response(prompt))
-        payload = {"model": self.model, "prompt": prompt, "stream": False}
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0, "top_p": 0.9, "num_predict": 600},
+        }
         data = await asyncio.to_thread(self._request, "POST", "/api/generate", payload)
         response = data.get("response")
         if not isinstance(response, str):
             raise OllamaClientError("Ollama response did not include text.")
         return response
 
-    async def generate_json(self, prompt: str) -> dict[str, Any]:
+    async def generate_json(
+        self,
+        prompt: str,
+        required_fields: list[str] | tuple[str, ...] = (),
+    ) -> dict[str, Any]:
         """Generate and parse JSON with controlled retries."""
         last_error: Exception | None = None
         for _ in range(self.retries + 1):
+            timer = LLMCallTimer()
+            raw = ""
+            parsed: dict[str, Any] | None = None
+            fallback_reason: str | None = None
             try:
                 raw = await self.generate(prompt)
-                parsed = json.loads(raw)
-                if not isinstance(parsed, dict):
-                    raise InvalidJSONError("LLM JSON response must be an object.")
+                parsed = self._parse_with_schema(raw, required_fields)
+                latency = timer.elapsed()
+                if self.metrics is not None:
+                    self.metrics.record_success(latency)
+                self._trace(prompt, raw, parsed, None, latency)
                 return parsed
-            except (json.JSONDecodeError, InvalidJSONError) as error:
+            except (json.JSONDecodeError, InvalidJSONError, OllamaClientError) as error:
                 last_error = error
+                fallback_reason = str(error)
+                latency = timer.elapsed()
+                if self.metrics is not None:
+                    self.metrics.record_failure(latency)
+                self._trace(prompt, raw, parsed, fallback_reason, latency)
         raise InvalidJSONError(f"Invalid JSON from LLM: {last_error}") from last_error
+
+    def record_fallback(self) -> None:
+        """Record that caller used a deterministic fallback."""
+        if self.metrics is not None:
+            self.metrics.record_fallback()
+
+    def _parse_with_schema(
+        self,
+        raw: str,
+        required_fields: list[str] | tuple[str, ...],
+    ) -> dict[str, Any]:
+        """Parse current compact schemas while accepting legacy LLMDecision JSON."""
+        try:
+            return self.extractor.parse(raw, required_fields)
+        except InvalidJSONError:
+            parsed = self.extractor.parse(raw)
+            if self._is_legacy_decision(parsed):
+                return parsed
+            raise
+
+    def _is_legacy_decision(self, parsed: dict[str, Any]) -> bool:
+        """Return whether parsed data matches the older LLMDecision shape."""
+        has_reasoning = "reasoning_summary" in parsed
+        has_content = "content" in parsed
+        return has_reasoning and has_content
 
     def _request(
         self, method: str, path: str, payload: dict[str, Any] | None = None
@@ -90,6 +136,27 @@ class OllamaClient:
             return json.loads(raw or "{}")
         except json.JSONDecodeError as error:
             raise OllamaClientError("Ollama returned invalid JSON.") from error
+
+    def _trace(
+        self,
+        prompt: str,
+        raw_response: str,
+        parsed_response: dict[str, Any] | None,
+        fallback_reason: str | None,
+        latency_seconds: float,
+    ) -> None:
+        """Write one LLM trace when configured."""
+        if self.trace_recorder is None:
+            return
+        self.trace_recorder.record(
+            agent=self.agent_name,
+            model=self.model,
+            prompt=prompt,
+            raw_response=raw_response,
+            parsed_response=parsed_response,
+            fallback_reason=fallback_reason,
+            latency_seconds=latency_seconds,
+        )
 
     def _next_mock_response(self, prompt: str) -> dict[str, Any]:
         """Return a deterministic mock JSON response."""
@@ -203,7 +270,7 @@ class OllamaClient:
         except (IndexError, json.JSONDecodeError):
             return None
 
-        context = payload.get("input_context", {})
+        context = payload.get("context", payload.get("input_context", {}))
         if not isinstance(context, dict):
             return None
         task = context.get("current_task", {})

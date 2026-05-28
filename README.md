@@ -21,6 +21,7 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Workspace seguro en `./workspace/` para operaciones controladas de archivos.
 - `ProjectMemory` semantica persistida para mantener coherencia sin enviar todo el historial al LLM.
 - Compresion de contexto y reduccion de ruido de eventos repetidos.
+- Salidas LLM JSON robustas con extraccion, reparacion simple, schemas y trazas en `workspace/.traces/`.
 
 No se ejecutan comandos del sistema, no se usa Docker y no se permite borrado de archivos.
 
@@ -155,6 +156,8 @@ El runtime publica `WORKFLOW_STARTED`, envia `GOAL_SUBMITTED` y espera hasta `WO
 
 Para objetivos multi-archivo, `FileAwarenessService` lista y lee archivos relevantes dentro del workspace para que los agentes mantengan coherencia entre `app.py`, `requirements.txt` y `README.md`. No lee fuera del sandbox ni archivos por encima del limite seguro.
 
+El resumen final incluye metricas LLM: respuestas JSON validas, fallos, fallbacks deterministas y latencia media.
+
 Por defecto, la CLI muestra una salida limpia y resume los eventos. Para ver todos los logs de agentes y supervisor:
 
 ```powershell
@@ -205,6 +208,42 @@ Los agentes de planificacion, codigo y revision usan prompts estructurados:
 - `LLMDecision`: `action`, `reasoning_summary`, `confidence`, `events_to_publish`, `task_updates`, `content`.
 
 Si Ollama no esta disponible o `USE_MOCK_LLM=true`, se usa modo mock. Si el modelo devuelve JSON invalido, el agente cae a una decision determinista segura.
+
+Para Ollama real, el cliente pide `format="json"` y usa opciones conservadoras:
+
+```text
+temperature=0
+top_p=0.9
+num_predict=600
+```
+
+Los agentes esperan schemas compactos:
+
+```text
+Planner:  {"tasks": [], "reasoning_summary": ""}
+Coder:    {"content": "", "reasoning_summary": ""}
+Reviewer: {"approved": true, "feedback": "", "reasoning_summary": ""}
+```
+
+`JsonExtractionService` intenta parsear JSON directo, quitar fences Markdown, extraer el primer objeto JSON embebido y reparar errores simples como comas finales, booleanos estilo Python o strings con comillas simples.
+
+## Troubleshooting Ollama
+
+Modelos recomendados para este proyecto:
+
+- `llama3.2`
+- `qwen2.5-coder`
+- `mistral`
+
+Si ves fallbacks altos, normalmente significa que Ollama devolvio texto no parseable, el modelo no existe localmente o el endpoint respondio con error. El sistema no ejecuta comandos ni se detiene por eso: registra el fallo, usa una decision determinista segura y continua cuando puede.
+
+Las trazas LLM se guardan en:
+
+```text
+workspace/.traces/
+```
+
+Cada trace contiene prompt resumido, respuesta cruda, respuesta parseada, razon del fallback si aplica y latencia. La carpeta `.traces` no se incluye como archivo creado por el objetivo.
 
 ## Memoria de proyecto
 

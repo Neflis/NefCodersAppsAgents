@@ -66,6 +66,13 @@ def print_summary(summary: RuntimeSummary) -> None:
     print(f"Archivos creados: {', '.join(summary.files_created) or '(ninguno)'}")
     print(f"Duracion: {summary.duration_seconds:.2f}s")
     print(f"Correlation ID: {summary.correlation_id}")
+    print(
+        "LLM: "
+        f"ok={summary.llm_success_count} "
+        f"fail={summary.llm_failure_count} "
+        f"fallbacks={summary.fallback_count} "
+        f"avg_latency={summary.average_llm_latency:.2f}s"
+    )
     event_counts = summary.event_summary.get("event_counts", {})
     if event_counts:
         print(f"Eventos: {event_counts}")

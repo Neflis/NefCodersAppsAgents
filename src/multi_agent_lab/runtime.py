@@ -27,6 +27,7 @@ from multi_agent_lab.core.task_graph import TaskNodeStatus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
+from multi_agent_lab.llm.metrics import LLMCallMetrics, LLMTraceRecorder
 from multi_agent_lab.llm.ollama_client import OllamaClient
 from multi_agent_lab.tools.file_tool import FileTool
 
@@ -46,6 +47,10 @@ class RuntimeSummary:
     correlation_id: str
     terminal_event: str
     event_summary: dict[str, object] = field(default_factory=dict)
+    llm_success_count: int = 0
+    llm_failure_count: int = 0
+    fallback_count: int = 0
+    average_llm_latency: float = 0.0
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -84,6 +89,8 @@ class AgentRuntime:
         workspace = WorkspaceManager(self.workspace_path)
         file_tool = FileTool(workspace)
         file_awareness = FileAwarenessService(file_tool)
+        llm_metrics = LLMCallMetrics()
+        trace_recorder = LLMTraceRecorder(workspace.root / ".traces")
         context_builder = AgentContextBuilder(
             graph_store,
             file_tool,
@@ -99,6 +106,8 @@ class AgentRuntime:
             event_logger,
             context_builder,
             noise_reducer,
+            llm_metrics,
+            trace_recorder,
         )
 
         terminal_inbox = await bus.subscribe_many(
@@ -156,6 +165,7 @@ class AgentRuntime:
                 terminal_event,
                 perf_counter() - started_at,
                 noise_reducer,
+                llm_metrics,
             )
         finally:
             for agent in agents:
@@ -171,11 +181,28 @@ class AgentRuntime:
         event_logger: AgentEventLogger,
         context_builder: AgentContextBuilder,
         noise_reducer: EventNoiseReducer,
+        llm_metrics: LLMCallMetrics,
+        trace_recorder: LLMTraceRecorder,
     ) -> list[BaseAgent]:
         """Create all agents for the runtime."""
-        planner_llm = self._llm_client(self.settings.ollama_model_planner)
-        coder_llm = self._llm_client(self.settings.ollama_model_coder)
-        reviewer_llm = self._llm_client(self.settings.ollama_model_reviewer)
+        planner_llm = self._llm_client(
+            self.settings.ollama_model_planner,
+            "planner",
+            llm_metrics,
+            trace_recorder,
+        )
+        coder_llm = self._llm_client(
+            self.settings.ollama_model_coder,
+            "coder",
+            llm_metrics,
+            trace_recorder,
+        )
+        reviewer_llm = self._llm_client(
+            self.settings.ollama_model_reviewer,
+            "reviewer",
+            llm_metrics,
+            trace_recorder,
+        )
         return [
             PlannerAgent("planner", bus, graph_store, event_logger, planner_llm, context_builder),
             CoderAgent("coder", bus, event_logger, coder_llm, context_builder),
@@ -194,13 +221,22 @@ class AgentRuntime:
             SupervisorAgent("supervisor", bus, event_logger, noise_reducer=noise_reducer),
         ]
 
-    def _llm_client(self, model: str) -> OllamaClient:
+    def _llm_client(
+        self,
+        model: str,
+        agent_name: str,
+        metrics: LLMCallMetrics,
+        trace_recorder: LLMTraceRecorder,
+    ) -> OllamaClient:
         """Create an Ollama client for one role."""
         return OllamaClient(
             self.settings.ollama_base_url,
             model,
             self.settings.ollama_timeout_seconds,
             use_mock=self.use_mock_llm,
+            metrics=metrics,
+            trace_recorder=trace_recorder,
+            agent_name=agent_name,
         )
 
     def _build_summary(
@@ -211,6 +247,7 @@ class AgentRuntime:
         terminal_event: Message,
         duration_seconds: float,
         noise_reducer: EventNoiseReducer,
+        llm_metrics: LLMCallMetrics,
     ) -> RuntimeSummary:
         """Build the final runtime summary."""
         completed = 0
@@ -241,5 +278,9 @@ class AgentRuntime:
             correlation_id=correlation_id,
             terminal_event=str(terminal_event.type),
             event_summary=noise_reducer.summary(),
+            llm_success_count=llm_metrics.success_count,
+            llm_failure_count=llm_metrics.failure_count,
+            fallback_count=llm_metrics.fallback_count,
+            average_llm_latency=llm_metrics.average_latency,
             details=dict(terminal_event.content or {}),
         )

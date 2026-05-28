@@ -16,17 +16,20 @@ class PromptTemplate:
     constraints: list[str]
     input_context: dict[str, Any]
     expected_json_output: dict[str, Any]
+    example_json_output: dict[str, Any] | None = None
 
     def render(self) -> str:
-        """Render a deterministic prompt for JSON output."""
+        """Render a compact deterministic prompt for JSON output."""
         payload = {
-            "identity": self.identity,
+            "agent": self.identity,
             "capabilities": self.capabilities,
             "constraints": self.constraints,
-            "input_context": self.input_context,
-            "expected_json_output": self.expected_json_output,
+            "context": self.input_context,
+            "required_json": self.expected_json_output,
+            "example": self.example_json_output or self.expected_json_output,
         }
         return (
-            "You are a local autonomous agent. Return only valid JSON.\n"
-            f"{json.dumps(payload, ensure_ascii=True, indent=2)}"
+            "Respond ONLY with valid JSON. No markdown. No prose. "
+            "No code fences. No explanations outside JSON.\n"
+            f"{json.dumps(payload, ensure_ascii=True, separators=(',', ':'))}"
         )

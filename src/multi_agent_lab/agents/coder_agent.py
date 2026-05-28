@@ -13,6 +13,7 @@ from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
 from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
+from multi_agent_lab.llm.schemas import CODER_DECISION_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -89,19 +90,32 @@ class CoderAgent(BaseAgent):
                 workspace_paths=self._related_paths(target_path),
             ),
             expected_json_output={
-                "action": "generate_content",
-                "reasoning_summary": "short text",
-                "confidence": 0.0,
                 "content": "markdown content",
-                "events_to_publish": [],
-                "task_updates": [],
+                "reasoning_summary": "short text",
+            },
+            example_json_output={
+                "content": "# Title\n\nShort file content.",
+                "reasoning_summary": "Generated the requested file.",
             },
         ).render()
         try:
-            return LLMDecision.from_dict(await self.ollama_client.generate_json(prompt))
+            data = await self.ollama_client.generate_json(prompt, CODER_DECISION_FIELDS)
+            return self._decision_from_schema(data)
         except (InvalidJSONError, OllamaClientError) as error:
             logger.info("Coder LLM no disponible; usando contenido determinista: %s", error)
+            self.ollama_client.record_fallback()
             return None
+
+    def _decision_from_schema(self, data: dict[str, object]) -> LLMDecision:
+        """Normalize compact coder schema to LLMDecision."""
+        if "content" in data:
+            return LLMDecision(
+                action="generate_content",
+                reasoning_summary=str(data.get("reasoning_summary", "")),
+                confidence=1.0,
+                content=data.get("content"),
+            )
+        return LLMDecision.from_dict(data)
 
     def _related_paths(self, target_path: str) -> list[str]:
         """Return related files that help preserve project coherence."""

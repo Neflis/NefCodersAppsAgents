@@ -75,6 +75,8 @@ class FileTool:
 
         files: list[str] = []
         for item in safe_path.rglob("*"):
+            if ".traces" in item.relative_to(self.workspace.root).parts:
+                continue
             if item.is_file() and item.suffix in self.allowed_extensions:
                 files.append(
                     self.workspace.relative_to_workspace(item.relative_to(self.workspace.root))

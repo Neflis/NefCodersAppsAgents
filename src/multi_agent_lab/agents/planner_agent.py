@@ -15,6 +15,7 @@ from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
 from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
+from multi_agent_lab.llm.schemas import PLANNER_DECISION_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -283,10 +284,7 @@ class PlannerAgent(BaseAgent):
             constraints=["Return JSON only.", "Do not request command execution."],
             input_context=self.context_builder.build(message),
             expected_json_output={
-                "action": "decompose_goal",
-                "reasoning_summary": "short text",
-                "confidence": 0.0,
-                "content": [
+                "tasks": [
                     {
                         "title": "task title",
                         "description": "task description",
@@ -295,15 +293,28 @@ class PlannerAgent(BaseAgent):
                         "priority": 10,
                     }
                 ],
-                "events_to_publish": [],
-                "task_updates": [],
+                "reasoning_summary": "short text",
             },
+            example_json_output={"tasks": [], "reasoning_summary": "Use existing graph pattern."},
         ).render()
         try:
-            return LLMDecision.from_dict(await self.llm_client.generate_json(prompt))
+            data = await self.llm_client.generate_json(prompt, PLANNER_DECISION_FIELDS)
+            return self._decision_from_schema(data)
         except (InvalidJSONError, OllamaClientError) as error:
             logger.info("Planner LLM no disponible; usando plan determinista: %s", error)
+            self.llm_client.record_fallback()
             return None
+
+    def _decision_from_schema(self, data: dict[str, object]) -> LLMDecision:
+        """Normalize compact planner schema to LLMDecision."""
+        if "tasks" in data:
+            return LLMDecision(
+                action="decompose_goal",
+                reasoning_summary=str(data.get("reasoning_summary", "")),
+                confidence=1.0,
+                content=data.get("tasks"),
+            )
+        return LLMDecision.from_dict(data)
 
     def _task_ready_payload(self, task: TaskNode) -> dict[str, object]:
         """Build a TASK_READY payload."""
