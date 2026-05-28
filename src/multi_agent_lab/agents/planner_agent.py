@@ -13,7 +13,7 @@ from multi_agent_lab.core.task_graph import Goal, TaskGraph, TaskNode
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
-from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient
+from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ class PlannerAgent(BaseAgent):
             EventType.GOAL_DECOMPOSED,
             {
                 "goal_id": graph.goal.id,
+                "goal": graph.goal.title,
                 "tasks": [task.to_dict() for task in graph.nodes.values()],
             },
             source=message,
@@ -139,6 +140,11 @@ class PlannerAgent(BaseAgent):
 
     def _build_flask_api_graph(self, graph: TaskGraph) -> TaskGraph:
         """Create a multi-file Flask TODO API graph."""
+        existing_files = self._workspace_files()
+        expected_files = {"app.py", "requirements.txt", "README.md"}
+        if expected_files.issubset(existing_files):
+            return self._build_existing_flask_review_graph(graph)
+
         design = graph.add_task(
             TaskNode(
                 title="Disenar estructura API Flask TODO",
@@ -203,6 +209,39 @@ class PlannerAgent(BaseAgent):
         )
         return graph
 
+    def _build_existing_flask_review_graph(self, graph: TaskGraph) -> TaskGraph:
+        """Create only review and validation tasks for an existing Flask project."""
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar coherencia final del proyecto existente",
+                description="Validar coherencia entre archivos ya presentes.",
+                required_capability=Capability.REVIEWING.value,
+                payload={
+                    "project_review": True,
+                    "paths": ["app.py", "requirements.txt", "README.md"],
+                },
+                priority=6,
+            )
+        )
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia de archivos existentes",
+                description="Comprobar que los archivos finales existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={"paths": ["app.py", "requirements.txt", "README.md"]},
+                dependencies={review.id},
+                priority=4,
+            )
+        )
+        return graph
+
+    def _workspace_files(self) -> set[str]:
+        """Return known workspace files from context services."""
+        file_awareness = getattr(self.context_builder, "file_awareness", None)
+        if file_awareness is None:
+            return set()
+        return set(file_awareness.list_files("."))
+
     def _is_flask_api_goal(self, goal_title: str) -> bool:
         """Return whether a goal asks for a Flask API project."""
         lowered = goal_title.lower()
@@ -262,8 +301,8 @@ class PlannerAgent(BaseAgent):
         ).render()
         try:
             return LLMDecision.from_dict(await self.llm_client.generate_json(prompt))
-        except InvalidJSONError as error:
-            logger.info("Planner LLM JSON invalido; usando plan determinista: %s", error)
+        except (InvalidJSONError, OllamaClientError) as error:
+            logger.info("Planner LLM no disponible; usando plan determinista: %s", error)
             return None
 
     def _task_ready_payload(self, task: TaskNode) -> dict[str, object]:

@@ -17,9 +17,11 @@ from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent
 from multi_agent_lab.config.settings import Settings, load_settings
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
+from multi_agent_lab.core.event_noise import EventNoiseReducer
 from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
+from multi_agent_lab.core.project_memory_service import ProjectMemoryService
 from multi_agent_lab.core.sqlite_store import SQLiteStore
 from multi_agent_lab.core.task_graph import TaskNodeStatus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -43,6 +45,7 @@ class RuntimeSummary:
     duration_seconds: float
     correlation_id: str
     terminal_event: str
+    event_summary: dict[str, object] = field(default_factory=dict)
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -57,6 +60,8 @@ class AgentRuntime:
         timeout_seconds: float = 10.0,
         settings: Settings | None = None,
         database_url: str | None = None,
+        verbose: bool = False,
+        max_context_chars: int = 6000,
     ) -> None:
         self.goal = goal
         self.workspace_path = workspace_path
@@ -64,18 +69,28 @@ class AgentRuntime:
         self.timeout_seconds = timeout_seconds
         self.settings = settings or load_settings()
         self.database_url = database_url or self.settings.database_url
+        self.verbose = verbose
+        self.max_context_chars = max_context_chars
 
     async def run(self) -> RuntimeSummary:
         """Run one goal through the autonomous agent network."""
         started_at = perf_counter()
         store = SQLiteStore(self.database_url)
         event_logger = AgentEventLogger(store)
-        bus = MessageBus(store)
+        project_memory = ProjectMemoryService(store)
+        noise_reducer = EventNoiseReducer(verbose=self.verbose)
+        bus = MessageBus(store, project_memory, noise_reducer)
         graph_store = TaskGraphStore(store)
         workspace = WorkspaceManager(self.workspace_path)
         file_tool = FileTool(workspace)
         file_awareness = FileAwarenessService(file_tool)
-        context_builder = AgentContextBuilder(graph_store, file_tool, file_awareness)
+        context_builder = AgentContextBuilder(
+            graph_store,
+            file_tool,
+            file_awareness,
+            project_memory,
+            max_context_chars=self.max_context_chars,
+        )
         agents = self._build_agents(
             bus,
             graph_store,
@@ -83,6 +98,7 @@ class AgentRuntime:
             file_awareness,
             event_logger,
             context_builder,
+            noise_reducer,
         )
 
         terminal_inbox = await bus.subscribe_many(
@@ -139,6 +155,7 @@ class AgentRuntime:
                 goal_event.correlation_id or goal_event.id,
                 terminal_event,
                 perf_counter() - started_at,
+                noise_reducer,
             )
         finally:
             for agent in agents:
@@ -153,6 +170,7 @@ class AgentRuntime:
         file_awareness: FileAwarenessService,
         event_logger: AgentEventLogger,
         context_builder: AgentContextBuilder,
+        noise_reducer: EventNoiseReducer,
     ) -> list[BaseAgent]:
         """Create all agents for the runtime."""
         planner_llm = self._llm_client(self.settings.ollama_model_planner)
@@ -173,7 +191,7 @@ class AgentRuntime:
             FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
             TesterAgent("tester", bus, file_tool, event_logger),
             TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),
-            SupervisorAgent("supervisor", bus, event_logger),
+            SupervisorAgent("supervisor", bus, event_logger, noise_reducer=noise_reducer),
         ]
 
     def _llm_client(self, model: str) -> OllamaClient:
@@ -192,6 +210,7 @@ class AgentRuntime:
         correlation_id: str,
         terminal_event: Message,
         duration_seconds: float,
+        noise_reducer: EventNoiseReducer,
     ) -> RuntimeSummary:
         """Build the final runtime summary."""
         completed = 0
@@ -221,5 +240,6 @@ class AgentRuntime:
             duration_seconds=duration_seconds,
             correlation_id=correlation_id,
             terminal_event=str(terminal_event.type),
+            event_summary=noise_reducer.summary(),
             details=dict(terminal_event.content or {}),
         )

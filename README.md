@@ -19,6 +19,8 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
 - Razonamiento LLM estructurado con `PromptTemplate`, `AgentContextBuilder` y `LLMDecision`.
 - Workspace seguro en `./workspace/` para operaciones controladas de archivos.
+- `ProjectMemory` semantica persistida para mantener coherencia sin enviar todo el historial al LLM.
+- Compresion de contexto y reduccion de ruido de eventos repetidos.
 
 No se ejecutan comandos del sistema, no se usa Docker y no se permite borrado de archivos.
 
@@ -153,6 +155,12 @@ El runtime publica `WORKFLOW_STARTED`, envia `GOAL_SUBMITTED` y espera hasta `WO
 
 Para objetivos multi-archivo, `FileAwarenessService` lista y lee archivos relevantes dentro del workspace para que los agentes mantengan coherencia entre `app.py`, `requirements.txt` y `README.md`. No lee fuera del sandbox ni archivos por encima del limite seguro.
 
+Por defecto, la CLI muestra una salida limpia y resume los eventos. Para ver todos los logs de agentes y supervisor:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una pequena API Flask TODO" --mock --verbose
+```
+
 ## Workspace seguro
 
 Todas las operaciones de archivos estan limitadas a:
@@ -193,10 +201,27 @@ Los agentes trabajadores no reciben tareas asignadas. Escuchan `TASK_READY`, rev
 Los agentes de planificacion, codigo y revision usan prompts estructurados:
 
 - `PromptTemplate`: identidad, capabilities, restricciones, contexto y salida JSON esperada.
-- `AgentContextBuilder`: objetivo, tarea actual, resumen del grafo, eventos recientes y archivos del workspace.
+- `AgentContextBuilder`: objetivo, tarea actual, resumen del grafo, memoria semantica, eventos recientes relevantes, arbol de archivos y archivos del workspace.
 - `LLMDecision`: `action`, `reasoning_summary`, `confidence`, `events_to_publish`, `task_updates`, `content`.
 
 Si Ollama no esta disponible o `USE_MOCK_LLM=true`, se usa modo mock. Si el modelo devuelve JSON invalido, el agente cae a una decision determinista segura.
+
+## Memoria de proyecto
+
+`ProjectMemoryService` mantiene una memoria por `correlation_id` y la persiste en SQLite. Se actualiza automaticamente cuando el bus publica eventos relevantes como `GOAL_DECOMPOSED`, `CODE_PROPOSED`, `FILE_WRITTEN`, `PROJECT_REVIEW_APPROVED`, `PROJECT_REVIEW_REJECTED`, `TEST_PASSED` y `TEST_FAILED`.
+
+La memoria resume:
+
+- objetivo del proyecto
+- framework detectado
+- archivos creados
+- decisiones de arquitectura
+- convenciones de codigo
+- errores conocidos
+- feedback del reviewer
+- tareas completadas relevantes
+
+El contexto enviado al LLM queda limitado por `AgentContextBuilder`: se prioriza la memoria resumida, el arbol de archivos y los eventos recientes de mayor senal, evitando reenviar todo el historial completo.
 
 ## Ejecutar tests
 

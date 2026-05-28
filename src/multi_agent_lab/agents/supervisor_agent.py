@@ -6,6 +6,7 @@ import logging
 from collections import Counter
 
 from multi_agent_lab.agents.base_agent import BaseAgent
+from multi_agent_lab.core.event_noise import EventNoiseReducer
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import WILDCARD_EVENT
 
@@ -32,11 +33,13 @@ class SupervisorAgent(BaseAgent):
         max_events_per_correlation: int = 50,
         max_failures_per_correlation: int = 3,
         max_retries_per_correlation: int = 5,
+        noise_reducer: EventNoiseReducer | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.max_events_per_correlation = max_events_per_correlation
         self.max_failures_per_correlation = max_failures_per_correlation
         self.max_retries_per_correlation = max_retries_per_correlation
+        self.noise_reducer = noise_reducer
         self._event_counts: Counter[str] = Counter()
         self._failure_counts: Counter[str] = Counter()
         self._retry_counts: Counter[str] = Counter()
@@ -45,7 +48,8 @@ class SupervisorAgent(BaseAgent):
     async def handle_message(self, message: Message) -> None:
         """Observe events and publish WORKFLOW_HALTED when limits are exceeded."""
         correlation_id = message.correlation_id or message.id
-        logger.info("Supervisor observo event=%s correlation=%s", message.type, correlation_id)
+        if self.noise_reducer is None or self.noise_reducer.should_log(message):
+            logger.info("Supervisor observo event=%s correlation=%s", message.type, correlation_id)
         if message.sender == self.name or correlation_id in self._halted:
             return
 

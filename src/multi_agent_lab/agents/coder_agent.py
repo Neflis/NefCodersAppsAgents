@@ -11,7 +11,7 @@ from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
-from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient
+from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,12 @@ class CoderAgent(BaseAgent):
             constraints=["Return JSON only.", "Generate content only for workspace files."],
             input_context=self.context_builder.build(
                 message,
-                current_task={"title": title, "path": target_path},
+                current_task={
+                    "title": title,
+                    "path": target_path,
+                    "payload": message.content.get("payload", {}),
+                },
+                workspace_paths=self._related_paths(target_path),
             ),
             expected_json_output={
                 "action": "generate_content",
@@ -94,9 +99,19 @@ class CoderAgent(BaseAgent):
         ).render()
         try:
             return LLMDecision.from_dict(await self.ollama_client.generate_json(prompt))
-        except InvalidJSONError as error:
-            logger.info("Coder LLM JSON invalido; usando contenido determinista: %s", error)
+        except (InvalidJSONError, OllamaClientError) as error:
+            logger.info("Coder LLM no disponible; usando contenido determinista: %s", error)
             return None
+
+    def _related_paths(self, target_path: str) -> list[str]:
+        """Return related files that help preserve project coherence."""
+        if target_path == "README.md":
+            return ["app.py", "requirements.txt"]
+        if target_path == "app.py":
+            return ["requirements.txt"]
+        if target_path == "requirements.txt":
+            return ["app.py"]
+        return []
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""

@@ -11,7 +11,7 @@ from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.decision import LLMDecision
-from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient
+from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient, OllamaClientError
 from multi_agent_lab.llm.prompt_template import PromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -167,6 +167,6 @@ class ReviewerAgent(BaseAgent):
         ).render()
         try:
             return LLMDecision.from_dict(await self.llm_client.generate_json(prompt))
-        except InvalidJSONError as error:
-            logger.info("Reviewer LLM JSON invalido; usando validacion determinista: %s", error)
+        except (InvalidJSONError, OllamaClientError) as error:
+            logger.info("Reviewer LLM no disponible; usando validacion determinista: %s", error)
             return None

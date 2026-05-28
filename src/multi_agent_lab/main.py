@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import sys
 
 from multi_agent_lab.runtime import AgentRuntime, RuntimeSummary
 
@@ -22,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--ollama", action="store_true", help="Use real Ollama decisions.")
     run_parser.add_argument("--workspace", default="workspace", help="Workspace sandbox path.")
     run_parser.add_argument("--timeout", type=float, default=10.0, help="Global timeout seconds.")
+    run_parser.add_argument("--verbose", action="store_true", help="Show detailed event logs.")
 
     parser.add_argument(
         "--mode",
@@ -48,6 +50,7 @@ async def run_from_args(args: argparse.Namespace) -> RuntimeSummary:
             workspace_path=args.workspace,
             use_mock_llm=not args.ollama,
             timeout_seconds=args.timeout,
+            verbose=args.verbose,
         )
         return await runtime.run()
 
@@ -63,12 +66,15 @@ def print_summary(summary: RuntimeSummary) -> None:
     print(f"Archivos creados: {', '.join(summary.files_created) or '(ninguno)'}")
     print(f"Duracion: {summary.duration_seconds:.2f}s")
     print(f"Correlation ID: {summary.correlation_id}")
+    event_counts = summary.event_summary.get("event_counts", {})
+    if event_counts:
+        print(f"Eventos: {event_counts}")
 
 
 def main() -> None:
     """Run the command-line entrypoint."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.INFO if "--verbose" in sys.argv else logging.WARNING,
         format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
     )
     args = build_parser().parse_args()

@@ -81,6 +81,12 @@ class SQLiteStore:
                 graph TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS project_memory (
+                correlation_id TEXT PRIMARY KEY,
+                memory TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """)
         self._migrate_messages_table()
         self._connection.commit()
@@ -189,9 +195,40 @@ class SQLiteStore:
         )
         self._connection.commit()
 
+    def save_project_memory(self, memory: dict[str, Any]) -> None:
+        """Persist semantic project memory."""
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO project_memory (correlation_id, memory, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                str(memory["correlation_id"]),
+                json.dumps(memory, ensure_ascii=True),
+            ),
+        )
+        self._connection.commit()
+
+    def load_project_memory(self, correlation_id: str) -> dict[str, Any] | None:
+        """Load semantic project memory by correlation id."""
+        cursor = self._connection.execute(
+            "SELECT memory FROM project_memory WHERE correlation_id = ?",
+            (correlation_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return dict(json.loads(str(row["memory"])))
+
     def fetch_all(self, table: str) -> list[sqlite3.Row]:
         """Fetch all rows from one supported table."""
-        if table not in {"messages", "tasks", "agent_events", "task_graphs"}:
+        if table not in {
+            "messages",
+            "tasks",
+            "agent_events",
+            "task_graphs",
+            "project_memory",
+        }:
             raise ValueError(f"Unsupported table: {table}")
         cursor = self._connection.execute(f"SELECT * FROM {table}")
         return list(cursor.fetchall())
