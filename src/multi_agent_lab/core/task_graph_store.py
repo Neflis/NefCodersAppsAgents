@@ -22,6 +22,10 @@ class TaskGraphStore:
         """Return a graph by correlation id."""
         return self._graphs[correlation_id]
 
+    def __contains__(self, correlation_id: str) -> bool:
+        """Return whether a graph exists."""
+        return correlation_id in self._graphs
+
     def persist(self, graph: TaskGraph) -> None:
         """Persist a graph snapshot if persistence is configured."""
         if self._store is not None:

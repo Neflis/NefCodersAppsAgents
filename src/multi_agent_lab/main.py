@@ -20,6 +20,7 @@ from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.sqlite_store import SQLiteStore
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.core.workspace_manager import WorkspaceManager
+from multi_agent_lab.llm.context_builder import AgentContextBuilder
 from multi_agent_lab.llm.ollama_client import OllamaClient
 from multi_agent_lab.tools.file_tool import FileTool
 
@@ -36,17 +37,40 @@ async def run_demo(mode: str = "demo_mock") -> None:
     workspace = WorkspaceManager("workspace")
     file_tool = FileTool(workspace)
 
-    ollama_client = OllamaClient(settings.ollama_base_url, settings.ollama_model)
+    planner_llm = OllamaClient(
+        settings.ollama_base_url,
+        settings.ollama_model_planner,
+        settings.ollama_timeout_seconds,
+        use_mock=settings.use_mock_llm,
+    )
+    coder_llm = OllamaClient(
+        settings.ollama_base_url,
+        settings.ollama_model_coder,
+        settings.ollama_timeout_seconds,
+        use_mock=settings.use_mock_llm,
+    )
+    reviewer_llm = OllamaClient(
+        settings.ollama_base_url,
+        settings.ollama_model_reviewer,
+        settings.ollama_timeout_seconds,
+        use_mock=settings.use_mock_llm,
+    )
     use_ollama = mode == "demo_ollama"
-    if use_ollama and not await ollama_client.health_check():
+    if use_ollama and not await coder_llm.health_check():
         logger.info("Ollama no disponible; se usara respuesta local simulada.")
         use_ollama = False
+    if not use_ollama:
+        planner_llm.use_mock = True
+        coder_llm.use_mock = True
+        reviewer_llm.use_mock = True
+
+    context_builder = AgentContextBuilder(graph_store, file_tool)
 
     test_results = await bus.subscribe(EventType.TEST_PASSED)
     agents = [
-        PlannerAgent("planner", bus, graph_store, event_logger),
-        CoderAgent("coder", bus, event_logger, ollama_client, use_ollama),
-        ReviewerAgent("reviewer", bus, graph_store, event_logger),
+        PlannerAgent("planner", bus, graph_store, event_logger, planner_llm, context_builder),
+        CoderAgent("coder", bus, event_logger, coder_llm, context_builder),
+        ReviewerAgent("reviewer", bus, graph_store, event_logger, reviewer_llm, context_builder),
         FileAgent("file_agent", bus, file_tool, graph_store, event_logger),
         TesterAgent("tester", bus, file_tool, event_logger),
         TaskCoordinatorAgent("coordinator", bus, graph_store, event_logger),

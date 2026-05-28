@@ -17,6 +17,7 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Logger de eventos de agentes.
 - Configuracion mediante `.env`.
 - Cliente Ollama con `health_check()`, `generate()`, timeout y manejo de errores.
+- Razonamiento LLM estructurado con `PromptTemplate`, `AgentContextBuilder` y `LLMDecision`.
 - Workspace seguro en `./workspace/` para operaciones controladas de archivos.
 
 No se ejecutan comandos del sistema, no se usa Docker y no se permite borrado de archivos.
@@ -48,8 +49,26 @@ Variables disponibles:
 ```text
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
+OLLAMA_MODEL_PLANNER=llama3.2
+OLLAMA_MODEL_CODER=llama3.2
+OLLAMA_MODEL_REVIEWER=llama3.2
+OLLAMA_TIMEOUT_SECONDS=10
+USE_MOCK_LLM=true
 DATABASE_URL=sqlite:///multi_agent_lab.db
 ```
+
+Para usar Ollama real:
+
+```text
+USE_MOCK_LLM=false
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL_PLANNER=llama3.2
+OLLAMA_MODEL_CODER=llama3.2
+OLLAMA_MODEL_REVIEWER=llama3.2
+```
+
+Modelos recomendados para pruebas locales: `llama3.2`, `qwen2.5-coder`, `mistral`.
+El modo mock (`USE_MOCK_LLM=true`) no llama a Ollama y devuelve JSON determinista.
 
 ## Ejecutar demo sin Ollama
 
@@ -130,6 +149,16 @@ Cada goal crea un `TaskGraph` identificado por `correlation_id`. Cada `TaskNode`
 - `required_capability`
 
 Los agentes trabajadores no reciben tareas asignadas. Escuchan `TASK_READY`, revisan `required_capability` y publican `TASK_CLAIMED` si son compatibles. El coordinator actualiza el grafo y publica nuevas tareas listas cuando sus dependencias se completan.
+
+## Razonamiento LLM
+
+Los agentes de planificacion, codigo y revision usan prompts estructurados:
+
+- `PromptTemplate`: identidad, capabilities, restricciones, contexto y salida JSON esperada.
+- `AgentContextBuilder`: objetivo, tarea actual, resumen del grafo, eventos recientes y archivos del workspace.
+- `LLMDecision`: `action`, `reasoning_summary`, `confidence`, `events_to_publish`, `task_updates`, `content`.
+
+Si Ollama no esta disponible o `USE_MOCK_LLM=true`, se usa modo mock. Si el modelo devuelve JSON invalido, el agente cae a una decision determinista segura.
 
 ## Ejecutar tests
 

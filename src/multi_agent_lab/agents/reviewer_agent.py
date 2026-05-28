@@ -8,6 +8,10 @@ from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
+from multi_agent_lab.llm.context_builder import AgentContextBuilder
+from multi_agent_lab.llm.decision import LLMDecision
+from multi_agent_lab.llm.ollama_client import InvalidJSONError, OllamaClient
+from multi_agent_lab.llm.prompt_template import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +22,19 @@ class ReviewerAgent(BaseAgent):
     subscribed_events = (EventType.TASK_READY,)
     capabilities = (Capability.REVIEWING.value,)
 
-    def __init__(self, name: str, bus, graph_store: TaskGraphStore, event_logger=None) -> None:
+    def __init__(
+        self,
+        name: str,
+        bus,
+        graph_store: TaskGraphStore,
+        event_logger=None,
+        llm_client: OllamaClient | None = None,
+        context_builder: AgentContextBuilder | None = None,
+    ) -> None:
         super().__init__(name, bus, event_logger)
         self.graph_store = graph_store
+        self.llm_client = llm_client
+        self.context_builder = context_builder or AgentContextBuilder(graph_store)
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible review tasks and complete them."""
@@ -40,7 +54,12 @@ class ReviewerAgent(BaseAgent):
         )
         logger.info("Revisando contenido task_id=%s path=%s", message.content["task_id"], path)
 
-        if not self._is_valid_content(content):
+        decision = await self._decide(message, content, path)
+        approved = self._is_valid_content(content)
+        if decision is not None:
+            approved = decision.action == "approve"
+
+        if not approved:
             await self.publish(
                 EventType.REVIEW_REJECTED,
                 {
@@ -72,3 +91,31 @@ class ReviewerAgent(BaseAgent):
     def _is_valid_content(self, content: str) -> bool:
         """Validate generated content before approving file writing."""
         return bool(content.strip()) and len(content.encode("utf-8")) <= 1024 * 1024
+
+    async def _decide(self, message: Message, content: str, path: str) -> LLMDecision | None:
+        """Ask the LLM to approve or reject content."""
+        if self.llm_client is None:
+            return None
+        self.context_builder.record_event(message)
+        prompt = PromptTemplate(
+            identity="ReviewerAgent",
+            capabilities=[Capability.REVIEWING.value],
+            constraints=["Return JSON only.", "Approve only safe non-empty content."],
+            input_context=self.context_builder.build(
+                message,
+                current_task={"path": path, "content": content},
+            ),
+            expected_json_output={
+                "action": "approve",
+                "reasoning_summary": "short text",
+                "confidence": 0.0,
+                "content": {"approved": True},
+                "events_to_publish": [],
+                "task_updates": [],
+            },
+        ).render()
+        try:
+            return LLMDecision.from_dict(await self.llm_client.generate_json(prompt))
+        except InvalidJSONError as error:
+            logger.info("Reviewer LLM JSON invalido; usando validacion determinista: %s", error)
+            return None
