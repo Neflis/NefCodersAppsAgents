@@ -8,6 +8,7 @@ from hashlib import sha256
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
+from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
 from multi_agent_lab.core.failure_analysis import FixStrategy
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
@@ -37,6 +38,7 @@ class CoderAgent(BaseAgent):
         super().__init__(name, bus, event_logger)
         self.ollama_client = ollama_client
         self.context_builder = context_builder or AgentContextBuilder()
+        self.content_sanitizer = CodeContentSanitizer()
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible coding tasks and complete them with a proposal."""
@@ -134,7 +136,13 @@ class CoderAgent(BaseAgent):
         prompt = PromptTemplate(
             identity="CoderAgent",
             capabilities=[Capability.CODING.value],
-            constraints=["Return JSON only.", "Generate content only for workspace files."],
+            constraints=[
+                "Return JSON only.",
+                "Generate content only for workspace files.",
+                "For .py files, output raw Python code only. Do not include markdown fences.",
+                "For .txt/.json files, output raw file content only.",
+                "Only README.md may contain markdown.",
+            ],
             input_context=self.context_builder.build(
                 message,
                 current_task={
@@ -191,6 +199,8 @@ class CoderAgent(BaseAgent):
         strategy: FixStrategy,
     ) -> str:
         """Generate deterministic or LLM-backed fix content."""
+        if strategy == FixStrategy.STRIP_MARKDOWN_FENCES:
+            return self._direct_strip_fence_fix(target_path)
         if self.ollama_client is None:
             return self._mock_fix_content(target_path, based_on_error, strategy)
         self.context_builder.record_event(message)
@@ -201,6 +211,9 @@ class CoderAgent(BaseAgent):
                 "Return JSON only.",
                 "Fix exactly one safe workspace file.",
                 "Do not request command execution.",
+                "For .py files, output raw Python code only. Do not include markdown fences.",
+                "For .txt/.json files, output raw file content only.",
+                "Only README.md may contain markdown.",
             ],
             input_context=self.context_builder.build(
                 message,
@@ -249,6 +262,11 @@ class CoderAgent(BaseAgent):
     ) -> FixStrategy:
         """Select a fix strategy from failure type and target file."""
         failure_type = str(failure_context.get("failure_type", ""))
+        traceback = str(failure_context.get("traceback", ""))
+        if failure_type == "MarkdownFenceSyntaxError" or (
+            failure_type == "SyntaxError" and "```" in traceback
+        ):
+            return FixStrategy.STRIP_MARKDOWN_FENCES
         if failure_type == "ModuleNotFoundError":
             return FixStrategy.ADD_MISSING_DEPENDENCY
         if failure_type == "ImportError":
@@ -296,6 +314,8 @@ class CoderAgent(BaseAgent):
         strategy: FixStrategy = FixStrategy.PATCH_EXISTING_FILE,
     ) -> str:
         """Return deterministic replacement content for common demo failures."""
+        if strategy == FixStrategy.STRIP_MARKDOWN_FENCES:
+            return self._direct_strip_fence_fix(target_path)
         if strategy == FixStrategy.ADD_MISSING_DEPENDENCY or target_path == "requirements.txt":
             return "Flask>=3.0\n"
         if target_path == "README.md" or "README" in based_on_error:
@@ -315,6 +335,15 @@ class CoderAgent(BaseAgent):
         if target_path == "tests/test_app.py":
             return self._mock_file_content("Fix tests", "tests/test_app.py", "pytest_tests")
         return self._mock_file_content("Fix app", "app.py", "flask_app")
+
+    def _direct_strip_fence_fix(self, target_path: str) -> str:
+        """Return existing target content with markdown fences removed."""
+        file_awareness = getattr(self.context_builder, "file_awareness", None)
+        if file_awareness is not None:
+            existing = file_awareness.safe_read_optional(target_path)
+            if existing:
+                return self.content_sanitizer.normalize_code_content(target_path, existing)
+        return self.content_sanitizer.normalize_code_content(target_path, "")
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""

@@ -7,6 +7,7 @@ import logging
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
+from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -28,10 +29,12 @@ class FileAgent(BaseAgent):
         file_tool: FileTool,
         graph_store: TaskGraphStore,
         event_logger: AgentEventLogger | None = None,
+        content_sanitizer: CodeContentSanitizer | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.file_tool = file_tool
         self.graph_store = graph_store
+        self.content_sanitizer = content_sanitizer or CodeContentSanitizer()
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible file tasks and write approved content."""
@@ -55,6 +58,7 @@ class FileAgent(BaseAgent):
             )
         )
         content = str(approved.get("content", ""))
+        content = self.content_sanitizer.normalize_code_content(path, content)
         logger.info("Escribiendo archivo task_id=%s path=%s", message.content["task_id"], path)
         try:
             written_path = self.file_tool.write_file(path, content)
@@ -86,9 +90,13 @@ class FileAgent(BaseAgent):
     async def _write_proposed_file(self, message: Message) -> None:
         """Write a proposed file emitted by a coding task."""
         path = str(message.content["path"])
+        content = self.content_sanitizer.normalize_code_content(
+            path,
+            str(message.content["content"]),
+        )
         logger.info("Escribiendo propuesta path=%s", path)
         try:
-            written_path = self.file_tool.write_file(path, str(message.content["content"]))
+            written_path = self.file_tool.write_file(path, content)
         except FileToolError as error:
             await self.publish(
                 EventType.FILE_WRITE_FAILED,
@@ -105,9 +113,13 @@ class FileAgent(BaseAgent):
     async def _apply_fix(self, message: Message) -> None:
         """Apply a proposed fix as a safe file replacement."""
         path = str(message.content["path"])
+        content = self.content_sanitizer.normalize_code_content(
+            path,
+            str(message.content["content"]),
+        )
         logger.info("Aplicando fix path=%s", path)
         try:
-            written_path = self.file_tool.write_file(path, str(message.content["content"]))
+            written_path = self.file_tool.write_file(path, content)
         except FileToolError as error:
             await self.publish(
                 EventType.FIX_FAILED,

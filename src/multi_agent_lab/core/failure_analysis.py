@@ -19,6 +19,7 @@ class FixStrategy(StrEnum):
     FIX_ROUTE = "fix_route"
     FIX_TEST = "fix_test"
     REWRITE_FUNCTION = "rewrite_function"
+    STRIP_MARKDOWN_FENCES = "strip_markdown_fences"
 
 
 @dataclass(slots=True)
@@ -95,6 +96,8 @@ class FailureAnalysisService:
     def detect_failure_type(self, text: str) -> str:
         """Detect common failure type names."""
         lowered = text.lower()
+        if "syntaxerror" in lowered and "```" in text:
+            return "MarkdownFenceSyntaxError"
         if "no module named" in lowered:
             return "ModuleNotFoundError"
         if "flask" in lowered and ("route" in lowered or "404" in lowered):

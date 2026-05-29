@@ -6,6 +6,7 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.capability import Capability
+from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
 from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -33,12 +34,14 @@ class ReviewerAgent(BaseAgent):
         llm_client: OllamaClient | None = None,
         context_builder: AgentContextBuilder | None = None,
         file_awareness: FileAwarenessService | None = None,
+        content_sanitizer: CodeContentSanitizer | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.graph_store = graph_store
         self.llm_client = llm_client
         self.context_builder = context_builder or AgentContextBuilder(graph_store)
         self.file_awareness = file_awareness
+        self.content_sanitizer = content_sanitizer or CodeContentSanitizer()
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible review tasks and complete them."""
@@ -63,9 +66,16 @@ class ReviewerAgent(BaseAgent):
         logger.info("Revisando contenido task_id=%s path=%s", message.content["task_id"], path)
 
         decision = await self._decide(message, content, path)
-        approved = self._is_valid_content(content)
+        approved = self._is_valid_content(path, content)
+        rejection_reason = "Contenido invalido"
+        if not self._has_valid_code_format(path, content):
+            approved = False
+            rejection_reason = "Python files must not include markdown code fences."
         if decision is not None:
-            approved = decision.action == "approve"
+            approved = decision.action == "approve" and self._has_valid_code_format(
+                path,
+                content,
+            )
 
         if not approved:
             await self.publish(
@@ -73,13 +83,13 @@ class ReviewerAgent(BaseAgent):
                 {
                     "task_id": message.content["task_id"],
                     "path": path,
-                    "reason": "Contenido invalido",
+                    "reason": rejection_reason,
                 },
                 source=message,
             )
             await self.publish(
                 EventType.TASK_FAILED,
-                {"task_id": message.content["task_id"], "error": "Contenido invalido"},
+                {"task_id": message.content["task_id"], "error": rejection_reason},
                 source=message,
             )
             return
@@ -140,9 +150,21 @@ class ReviewerAgent(BaseAgent):
             feedback.append("README.md debe mencionar los endpoints TODO.")
         return feedback
 
-    def _is_valid_content(self, content: str) -> bool:
+    def _is_valid_content(self, path: str, content: str) -> bool:
         """Validate generated content before approving file writing."""
-        return bool(content.strip()) and len(content.encode("utf-8")) <= 1024 * 1024
+        return (
+            bool(content.strip())
+            and len(content.encode("utf-8")) <= 1024 * 1024
+            and self._has_valid_code_format(path, content)
+        )
+
+    def _has_valid_code_format(self, path: str, content: str) -> bool:
+        """Return whether code files avoid markdown code fences."""
+        try:
+            self.content_sanitizer.validate_no_markdown_fences(path, content)
+        except ValueError:
+            return False
+        return True
 
     async def _decide(self, message: Message, content: str, path: str) -> LLMDecision | None:
         """Ask the LLM to approve or reject content."""

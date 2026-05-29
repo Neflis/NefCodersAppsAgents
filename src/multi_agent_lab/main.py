@@ -98,6 +98,8 @@ def print_summary(summary: RuntimeSummary) -> None:
             "Invalid paths ignored: "
             f"{summary.invalid_paths_ignored}/{summary.invalid_paths_detected}"
         )
+    if summary.sanitized_files_count:
+        print(f"Sanitized files: {summary.sanitized_files_count}")
     if summary.final_failure_reason:
         print(f"Final failure: {summary.final_failure_reason}")
     event_counts = summary.event_summary.get("event_counts", {})
