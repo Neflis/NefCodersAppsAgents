@@ -6,6 +6,9 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from multi_agent_lab.core.file_path_normalizer import FilePathNormalizer
+from multi_agent_lab.core.workspace_manager import WorkspaceSecurityError
+
 
 class FixStrategy(StrEnum):
     """Supported fix strategies."""
@@ -54,6 +57,9 @@ class FailureAnalysisService:
         "AttributeError",
         "NameError",
     )
+
+    def __init__(self, path_normalizer: FilePathNormalizer | None = None) -> None:
+        self.path_normalizer = path_normalizer or FilePathNormalizer()
 
     def parse_pytest_output(
         self,
@@ -105,12 +111,14 @@ class FailureAnalysisService:
     def infer_related_files(self, text: str) -> list[str]:
         """Infer workspace files mentioned by failure output."""
         files = []
-        for match in re.finditer(r"([\w./\\-]+\.py|README\.md|requirements\.txt)", text):
-            path = match.group(1).replace("\\", "/")
-            if path.startswith("./"):
-                path = path[2:]
-            if path not in files:
-                files.append(path)
+        candidates = self._path_candidates(text)
+        for path in candidates:
+            try:
+                normalized = self.path_normalizer.normalize_workspace_path(path)
+            except WorkspaceSecurityError:
+                continue
+            if normalized not in files:
+                files.append(normalized)
         if "No module named" in text and "requirements.txt" not in files:
             files.insert(0, "requirements.txt")
         return files
@@ -139,3 +147,18 @@ class FailureAnalysisService:
                 if match.group(1) not in symbols:
                     symbols.append(match.group(1))
         return symbols
+
+    def _path_candidates(self, text: str) -> list[str]:
+        """Return raw path-like candidates from pytest output."""
+        candidates: list[str] = []
+        patterns = (
+            r'File "([^"]+)", line \d+',
+            r"FAILED\s+([^\s:]+\.py)(?:::|:)",
+            r"((?:[A-Za-z]:)?[^\s'\"<>|]+(?:\.py|README\.md|requirements\.txt))",
+        )
+        for pattern in patterns:
+            for match in re.finditer(pattern, text):
+                candidate = match.group(1)
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        return candidates

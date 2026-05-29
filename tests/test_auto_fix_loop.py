@@ -79,6 +79,32 @@ async def test_pytest_failure_generates_fix_requested() -> None:
     )
 
 
+async def test_coordinator_filters_external_failure_paths(tmp_path: Path) -> None:
+    bus = MessageBus()
+    graph_store, task_id = graph_with_execution_task()
+    coordinator = TaskCoordinatorAgent(
+        "coordinator",
+        bus,
+        graph_store,
+        path_normalizer=None,
+    )
+    requested = await bus.subscribe(EventType.FIX_REQUESTED)
+    failure = execution_failure(task_id)
+    failure.content["suggested_focus_files"] = [str(tmp_path / "outside.py"), "README.md"]
+    failure.content["stderr"] = (
+        f'Traceback (most recent call last):\n  File "{tmp_path / "outside.py"}", line 3\n'
+        "AssertionError"
+    )
+
+    await coordinator.handle_message(failure)
+
+    event = await requested.get()
+    assert event.content["payload"]["suggested_focus_files"] == ["README.md"]
+    suspected_files = event.content["payload"]["failure_context"]["suspected_files"]
+    assert suspected_files == ["tests/test_app.py"]
+    assert str(tmp_path / "outside.py") not in suspected_files
+
+
 async def test_coder_proposes_fix_using_stderr() -> None:
     bus = MessageBus()
     proposed = await bus.subscribe(EventType.FIX_PROPOSED)

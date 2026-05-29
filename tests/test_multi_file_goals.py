@@ -2,7 +2,7 @@ from pathlib import Path
 
 from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
 from multi_agent_lab.core.file_awareness import FileAwarenessService
-from multi_agent_lab.core.workspace_manager import WorkspaceManager, WorkspaceSecurityError
+from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.runtime import AgentRuntime
 from multi_agent_lab.tools.file_tool import FileTool
 
@@ -62,9 +62,6 @@ def test_file_awareness_does_not_read_outside_workspace(tmp_path: Path) -> None:
     workspace = WorkspaceManager(tmp_path / "workspace")
     awareness = FileAwarenessService(FileTool(workspace))
 
-    try:
-        awareness.read_relevant_files(["../secret.txt"])
-    except WorkspaceSecurityError:
-        pass
-    else:
-        raise AssertionError("Path traversal should be blocked.")
+    assert awareness.read_relevant_files(["../secret.txt"]) == {}
+    assert awareness.invalid_paths_detected == 1
+    assert awareness.invalid_paths_ignored == 1

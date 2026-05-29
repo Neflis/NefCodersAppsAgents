@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.message import Message
 from multi_agent_lab.core.project_memory_service import ProjectMemoryService
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
-from multi_agent_lab.tools.file_tool import FileTool
+from multi_agent_lab.core.workspace_manager import WorkspaceSecurityError
+from multi_agent_lab.tools.file_tool import FileTool, FileToolError
+
+logger = logging.getLogger(__name__)
 
 
 class AgentContextBuilder:
@@ -77,8 +81,12 @@ class AgentContextBuilder:
         files: dict[str, str] = {}
         workspace_tree: dict[str, object] = {"files": []}
         if self.file_awareness is not None:
-            workspace_tree = self.file_awareness.summarize_workspace()
-            files = self.file_awareness.read_relevant_files(workspace_paths or [])
+            try:
+                workspace_tree = self.file_awareness.summarize_workspace()
+                files = self.file_awareness.read_relevant_files(workspace_paths or [])
+            except (FileToolError, WorkspaceSecurityError) as error:
+                logger.warning("Ignoring invalid workspace context paths: %s", error)
+                files = {}
 
         memory_summary = ""
         if self.project_memory is not None:

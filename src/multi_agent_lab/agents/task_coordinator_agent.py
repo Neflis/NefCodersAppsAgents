@@ -6,9 +6,11 @@ import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.failure_analysis import FailureAnalysisService
+from multi_agent_lab.core.file_path_normalizer import FilePathNormalizer
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph import TaskNode, TaskNodeStatus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
+from multi_agent_lab.core.workspace_manager import WorkspaceSecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +33,15 @@ class TaskCoordinatorAgent(BaseAgent):
         event_logger=None,
         max_retries: int = 2,
         max_fix_attempts: int = 2,
+        path_normalizer: FilePathNormalizer | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.graph_store = graph_store
         self.max_retries = max_retries
         self.max_fix_attempts = max_fix_attempts
         self._fix_attempts: dict[str, int] = {}
-        self.failure_analysis = FailureAnalysisService()
+        self.path_normalizer = path_normalizer or FilePathNormalizer()
+        self.failure_analysis = FailureAnalysisService(self.path_normalizer)
 
     async def handle_message(self, message: Message) -> None:
         """Apply task graph transitions caused by worker events."""
@@ -134,7 +138,16 @@ class TaskCoordinatorAgent(BaseAgent):
             str(message.content.get("stderr", "")),
             retry_number=attempts + 1,
         )
-        fix_metadata = self._fix_metadata(message, attempts + 1, failure_context.to_dict())
+        failure_context_data = self._safe_failure_context(failure_context.to_dict())
+        suggested_focus_files = self._safe_workspace_files(
+            message.content.get("suggested_focus_files", [])
+        )
+        fix_metadata = self._fix_metadata(
+            message,
+            attempts + 1,
+            failure_context_data,
+            suggested_focus_files,
+        )
         fix_task = graph.add_task(
             TaskNode(
                 title=f"Corregir fallo de ejecucion #{attempts + 1}",
@@ -146,10 +159,14 @@ class TaskCoordinatorAgent(BaseAgent):
                     "attempt": attempts + 1,
                     "max_fix_attempts": self.max_fix_attempts,
                     "failure": message.content,
-                    "failure_context": failure_context.to_dict(),
+                    "failure_context": failure_context_data,
                     "failure_summary": self.failure_analysis.summarize_failure(failure_context),
-                    "path": self._primary_focus_file(message, failure_context.to_dict()),
-                    "suggested_focus_files": message.content.get("suggested_focus_files", []),
+                    "path": self._primary_focus_file(
+                        message,
+                        failure_context_data,
+                        suggested_focus_files,
+                    ),
+                    "suggested_focus_files": suggested_focus_files,
                     "command_id": message.content.get("command_id", "pytest"),
                     "args": message.content.get("args", []),
                     "metadata": fix_metadata,
@@ -170,13 +187,14 @@ class TaskCoordinatorAgent(BaseAgent):
         message: Message,
         attempt: int,
         failure_context: dict[str, object],
+        suggested_focus_files: list[str],
     ) -> dict[str, object]:
         """Build metadata for a generated fix task."""
         return {
             "failed_command": message.content.get("command", ""),
             "stdout": message.content.get("stdout", ""),
             "stderr": message.content.get("stderr", ""),
-            "suggested_focus_files": message.content.get("suggested_focus_files", []),
+            "suggested_focus_files": suggested_focus_files,
             "fix_attempt": attempt,
             "failure_context": failure_context,
             "failure_analysis": failure_context,
@@ -186,9 +204,10 @@ class TaskCoordinatorAgent(BaseAgent):
         self,
         message: Message,
         failure_context: dict[str, object] | None = None,
+        suggested_focus_files: list[str] | None = None,
     ) -> str:
-        focus_files = message.content.get("suggested_focus_files", [])
-        if isinstance(focus_files, list) and focus_files:
+        focus_files = suggested_focus_files
+        if focus_files:
             return str(focus_files[0])
         context = failure_context or message.content.get("failure_context", {})
         if isinstance(context, dict):
@@ -197,8 +216,33 @@ class TaskCoordinatorAgent(BaseAgent):
                 return str(suspected_files[0])
         failed_files = message.content.get("failed_files", [])
         if isinstance(failed_files, list) and failed_files:
-            return str(failed_files[0])
+            safe_failed_files = self._safe_workspace_files(failed_files)
+            if safe_failed_files:
+                return safe_failed_files[0]
         return "app.py"
+
+    def _safe_failure_context(self, failure_context: dict[str, object]) -> dict[str, object]:
+        """Filter paths inside a failure context."""
+        safe_context = dict(failure_context)
+        safe_context["suspected_files"] = self._safe_workspace_files(
+            safe_context.get("suspected_files", [])
+        )
+        return safe_context
+
+    def _safe_workspace_files(self, paths: object) -> list[str]:
+        """Return only normalized workspace-relative paths."""
+        if not isinstance(paths, list):
+            return []
+        safe_paths: list[str] = []
+        for path in paths:
+            try:
+                normalized = self.path_normalizer.normalize_workspace_path(str(path))
+            except WorkspaceSecurityError as error:
+                logger.warning("Ignoring invalid failure path %r: %s", path, error)
+                continue
+            if normalized not in safe_paths:
+                safe_paths.append(normalized)
+        return safe_paths
 
     async def _publish_graph_updated(self, source: Message) -> None:
         graph = self.graph_store.get(source.correlation_id or "")

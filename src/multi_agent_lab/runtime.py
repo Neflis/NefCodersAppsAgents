@@ -21,6 +21,7 @@ from multi_agent_lab.config.settings import Settings, load_settings
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.event_noise import EventNoiseReducer
 from multi_agent_lab.core.file_awareness import FileAwarenessService
+from multi_agent_lab.core.file_path_normalizer import FilePathNormalizer
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.project_memory_service import ProjectMemoryService
@@ -61,6 +62,8 @@ class RuntimeSummary:
     detected_failure_types: list[str] = field(default_factory=list)
     fixes_attempted: int = 0
     repeated_failures: list[str] = field(default_factory=list)
+    invalid_paths_detected: int = 0
+    invalid_paths_ignored: int = 0
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -106,6 +109,7 @@ class AgentRuntime:
         file_tool = FileTool(workspace)
         command_tool = CommandTool(workspace)
         file_awareness = FileAwarenessService(file_tool)
+        path_normalizer = FilePathNormalizer(workspace.root)
         llm_metrics = LLMCallMetrics()
         trace_recorder = LLMTraceRecorder(workspace.root / ".traces")
         context_builder = AgentContextBuilder(
@@ -126,6 +130,7 @@ class AgentRuntime:
             noise_reducer,
             llm_metrics,
             trace_recorder,
+            path_normalizer,
         )
 
         terminal_inbox = await bus.subscribe_many(
@@ -197,6 +202,7 @@ class AgentRuntime:
                 perf_counter() - started_at,
                 noise_reducer,
                 llm_metrics,
+                file_awareness,
             )
         finally:
             for agent in agents:
@@ -215,6 +221,7 @@ class AgentRuntime:
         noise_reducer: EventNoiseReducer,
         llm_metrics: LLMCallMetrics,
         trace_recorder: LLMTraceRecorder,
+        path_normalizer: FilePathNormalizer,
     ) -> list[BaseAgent]:
         """Create all agents for the runtime."""
         planner_llm = self._llm_client(
@@ -255,6 +262,7 @@ class AgentRuntime:
                 graph_store,
                 event_logger,
                 max_fix_attempts=self.max_fix_attempts,
+                path_normalizer=path_normalizer,
             ),
             SupervisorAgent(
                 "supervisor",
@@ -298,6 +306,7 @@ class AgentRuntime:
         duration_seconds: float,
         noise_reducer: EventNoiseReducer,
         llm_metrics: LLMCallMetrics,
+        file_awareness: FileAwarenessService,
     ) -> RuntimeSummary:
         """Build the final runtime summary."""
         completed = 0
@@ -348,6 +357,8 @@ class AgentRuntime:
             detected_failure_types=failure_types,
             fixes_attempted=fixes_attempted,
             repeated_failures=repeated_failures,
+            invalid_paths_detected=file_awareness.invalid_paths_detected,
+            invalid_paths_ignored=file_awareness.invalid_paths_ignored,
             details=dict(terminal_event.content or {}),
         )
 
