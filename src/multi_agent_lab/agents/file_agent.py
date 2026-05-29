@@ -8,6 +8,7 @@ from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
+from multi_agent_lab.core.fix_target_guard import FixTargetGuard
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -30,11 +31,13 @@ class FileAgent(BaseAgent):
         graph_store: TaskGraphStore,
         event_logger: AgentEventLogger | None = None,
         content_sanitizer: CodeContentSanitizer | None = None,
+        fix_target_guard: FixTargetGuard | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.file_tool = file_tool
         self.graph_store = graph_store
         self.content_sanitizer = content_sanitizer or CodeContentSanitizer()
+        self.fix_target_guard = fix_target_guard or FixTargetGuard()
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible file tasks and write approved content."""
@@ -113,6 +116,28 @@ class FileAgent(BaseAgent):
     async def _apply_fix(self, message: Message) -> None:
         """Apply a proposed fix as a safe file replacement."""
         path = str(message.content["path"])
+        if self.fix_target_guard.is_wrong_target(
+            path,
+            message.content.get("failure_context", {}),
+            message.content.get("fix_strategy", ""),
+        ):
+            self.fix_target_guard.record_wrong_target()
+            await self.publish(
+                EventType.FIX_FAILED,
+                {
+                    "task_id": message.content["task_id"],
+                    "path": path,
+                    "error": "wrong_target_fix",
+                    "execution_task_id": message.content.get("execution_task_id"),
+                },
+                source=message,
+            )
+            await self.publish(
+                EventType.TASK_FAILED,
+                {"task_id": message.content["task_id"], "error": "wrong_target_fix"},
+                source=message,
+            )
+            return
         content = self.content_sanitizer.normalize_code_content(
             path,
             str(message.content["content"]),

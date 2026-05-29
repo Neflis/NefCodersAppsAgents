@@ -7,6 +7,7 @@ from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
 from multi_agent_lab.core.failure_analysis import FailureAnalysisService, FixStrategy
 from multi_agent_lab.core.file_awareness import FileAwarenessService
+from multi_agent_lab.core.fix_target_guard import FixTargetGuard
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -62,6 +63,40 @@ async def test_file_agent_does_not_write_python_fences(tmp_path: Path) -> None:
     assert sanitizer.sanitized_files_count == 1
 
 
+async def test_file_agent_rejects_local_import_fix_to_requirements(tmp_path: Path) -> None:
+    bus = MessageBus()
+    failed = await bus.subscribe(EventType.FIX_FAILED)
+    workspace = WorkspaceManager(tmp_path / "workspace")
+    guard = FixTargetGuard()
+    agent = FileAgent(
+        "file_agent",
+        bus,
+        FileTool(workspace),
+        TaskGraphStore(),
+        fix_target_guard=guard,
+    )
+
+    await agent.handle_message(
+        Message(
+            sender="coder",
+            type=EventType.FIX_PROPOSED,
+            content={
+                "task_id": "fix-task",
+                "path": "requirements.txt",
+                "content": "Flask>=3.0\n",
+                "fix_strategy": FixStrategy.FIX_LOCAL_MODULE_IMPORT.value,
+                "failure_context": {"failure_type": "LocalModuleNotFoundError"},
+            },
+            correlation_id="corr",
+        )
+    )
+
+    event = await failed.get()
+    assert event.content["error"] == "wrong_target_fix"
+    assert guard.wrong_target_fix_count == 1
+    assert not (workspace.root / "requirements.txt").exists()
+
+
 def test_failure_analysis_detects_markdown_fence_syntax_error() -> None:
     service = FailureAnalysisService()
     stderr = 'File "workspace/tests/test_app.py", line 3\n```python\n^\nSyntaxError: invalid syntax'
@@ -78,7 +113,7 @@ def test_failure_analysis_detects_markdown_fence_syntax_error() -> None:
 
 def test_module_not_found_app_uses_local_import_strategy() -> None:
     context = FailureAnalysisService().parse_pytest_output(
-        "",
+        "FAILED tests/test_app.py::test_health",
         "ModuleNotFoundError: No module named 'app'",
     )
     strategy = CoderAgent("coder", None)._select_fix_strategy(  # type: ignore[arg-type]
@@ -89,6 +124,22 @@ def test_module_not_found_app_uses_local_import_strategy() -> None:
     assert context.failure_type == "LocalModuleNotFoundError"
     assert context.suspected_files == ["tests/test_app.py", "app.py"]
     assert strategy == FixStrategy.FIX_LOCAL_MODULE_IMPORT
+
+
+def test_module_not_found_external_uses_requirements() -> None:
+    for module_name in ("flask", "sqlalchemy"):
+        context = FailureAnalysisService().parse_pytest_output(
+            "FAILED tests/test_app.py::test_health",
+            f"ModuleNotFoundError: No module named '{module_name}'",
+        )
+        strategy = CoderAgent("coder", None)._select_fix_strategy(  # type: ignore[arg-type]
+            context.to_dict(),
+            "requirements.txt",
+        )
+
+        assert context.failure_type == "ModuleNotFoundError"
+        assert context.suspected_files[0] == "requirements.txt"
+        assert strategy == FixStrategy.ADD_MISSING_DEPENDENCY
 
 
 def test_reviewer_rejects_python_markdown_fences() -> None:

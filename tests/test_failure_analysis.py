@@ -53,7 +53,8 @@ def test_failure_analysis_detects_traceback() -> None:
         "ModuleNotFoundError: No module named 'missing'\n",
     )
 
-    assert context.failure_type == "ModuleNotFoundError"
+    assert context.failure_type == "LocalModuleNotFoundError"
     assert "Traceback" in context.traceback
-    assert "requirements.txt" in context.suspected_files
+    assert "requirements.txt" not in context.suspected_files
+    assert "missing.py" in context.suspected_files
     assert "missing" in context.suspected_symbols

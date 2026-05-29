@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
-from multi_agent_lab.core.failure_analysis import FailureAnalysisService
+from multi_agent_lab.core.failure_analysis import FailureAnalysisService, FixStrategy
 from multi_agent_lab.core.file_path_normalizer import FilePathNormalizer
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph import TaskNode, TaskNodeStatus
@@ -142,11 +142,14 @@ class TaskCoordinatorAgent(BaseAgent):
         suggested_focus_files = self._safe_workspace_files(
             message.content.get("suggested_focus_files", [])
         )
+        fix_strategy = self._fix_strategy(failure_context_data)
+        target_files = self._target_files(failure_context_data, suggested_focus_files)
         fix_metadata = self._fix_metadata(
             message,
             attempts + 1,
             failure_context_data,
-            suggested_focus_files,
+            target_files,
+            fix_strategy,
         )
         fix_task = graph.add_task(
             TaskNode(
@@ -161,12 +164,10 @@ class TaskCoordinatorAgent(BaseAgent):
                     "failure": message.content,
                     "failure_context": failure_context_data,
                     "failure_summary": self.failure_analysis.summarize_failure(failure_context),
-                    "path": self._primary_focus_file(
-                        message,
-                        failure_context_data,
-                        suggested_focus_files,
-                    ),
-                    "suggested_focus_files": suggested_focus_files,
+                    "path": self._primary_focus_file(message, failure_context_data, target_files),
+                    "suggested_focus_files": target_files,
+                    "target_files": target_files,
+                    "fix_strategy": fix_strategy,
                     "command_id": message.content.get("command_id", "pytest"),
                     "args": message.content.get("args", []),
                     "metadata": fix_metadata,
@@ -187,14 +188,17 @@ class TaskCoordinatorAgent(BaseAgent):
         message: Message,
         attempt: int,
         failure_context: dict[str, object],
-        suggested_focus_files: list[str],
+        target_files: list[str],
+        fix_strategy: str,
     ) -> dict[str, object]:
         """Build metadata for a generated fix task."""
         return {
             "failed_command": message.content.get("command", ""),
             "stdout": message.content.get("stdout", ""),
             "stderr": message.content.get("stderr", ""),
-            "suggested_focus_files": suggested_focus_files,
+            "suggested_focus_files": target_files,
+            "target_files": target_files,
+            "fix_strategy": fix_strategy,
             "fix_attempt": attempt,
             "failure_context": failure_context,
             "failure_analysis": failure_context,
@@ -220,6 +224,34 @@ class TaskCoordinatorAgent(BaseAgent):
             if safe_failed_files:
                 return safe_failed_files[0]
         return "app.py"
+
+    def _fix_strategy(self, failure_context: dict[str, object]) -> str:
+        """Return the strategy implied by failure context."""
+        failure_type = str(failure_context.get("failure_type", ""))
+        if failure_type == "LocalModuleNotFoundError":
+            return FixStrategy.FIX_LOCAL_MODULE_IMPORT.value
+        if failure_type == "ModuleNotFoundError":
+            return FixStrategy.ADD_MISSING_DEPENDENCY.value
+        return ""
+
+    def _target_files(
+        self,
+        failure_context: dict[str, object],
+        suggested_focus_files: list[str],
+    ) -> list[str]:
+        """Choose target files from failure type without drifting to requirements."""
+        if failure_context.get("failure_type") == "LocalModuleNotFoundError":
+            suspected = failure_context.get("suspected_files", [])
+            local_targets = [
+                str(path) for path in suspected if isinstance(path, str) and path.endswith(".py")
+            ]
+            for fallback in ("tests/test_app.py", "app.py"):
+                if fallback not in local_targets:
+                    local_targets.append(fallback)
+            return local_targets
+        return suggested_focus_files or self._safe_workspace_files(
+            failure_context.get("suspected_files", [])
+        )
 
     def _safe_failure_context(self, failure_context: dict[str, object]) -> dict[str, object]:
         """Filter paths inside a failure context."""

@@ -38,6 +38,14 @@ def execution_failure(task_id: str = "exec-task") -> Message:
     )
 
 
+def local_import_failure(task_id: str = "exec-task") -> Message:
+    failure = execution_failure(task_id)
+    failure.content["stdout"] = "FAILED tests/test_app.py::test_health"
+    failure.content["stderr"] = "ModuleNotFoundError: No module named 'app'"
+    failure.content["suggested_focus_files"] = ["requirements.txt", "app.py"]
+    return failure
+
+
 def graph_with_execution_task() -> tuple[TaskGraphStore, str]:
     graph_store = TaskGraphStore()
     graph = TaskGraph(Goal("demo", "corr"))
@@ -103,6 +111,23 @@ async def test_coordinator_filters_external_failure_paths(tmp_path: Path) -> Non
     suspected_files = event.content["payload"]["failure_context"]["suspected_files"]
     assert suspected_files == ["tests/test_app.py"]
     assert str(tmp_path / "outside.py") not in suspected_files
+
+
+async def test_local_module_not_found_targets_python_files_not_requirements() -> None:
+    bus = MessageBus()
+    graph_store, task_id = graph_with_execution_task()
+    coordinator = TaskCoordinatorAgent("coordinator", bus, graph_store)
+    requested = await bus.subscribe(EventType.FIX_REQUESTED)
+
+    await coordinator.handle_message(local_import_failure(task_id))
+
+    event = await requested.get()
+    payload = event.content["payload"]
+    assert payload["path"] == "tests/test_app.py"
+    assert payload["target_files"] == ["tests/test_app.py", "app.py"]
+    assert payload["suggested_focus_files"] == ["tests/test_app.py", "app.py"]
+    assert event.metadata["target_files"] == ["tests/test_app.py", "app.py"]
+    assert "requirements.txt" not in payload["target_files"]
 
 
 async def test_coder_proposes_fix_using_stderr() -> None:

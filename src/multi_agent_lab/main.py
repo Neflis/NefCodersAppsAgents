@@ -100,6 +100,8 @@ def print_summary(summary: RuntimeSummary) -> None:
         )
     if summary.sanitized_files_count:
         print(f"Sanitized files: {summary.sanitized_files_count}")
+    if summary.wrong_target_fix_count:
+        print(f"Wrong target fixes rejected: {summary.wrong_target_fix_count}")
     if summary.final_failure_reason:
         print(f"Final failure: {summary.final_failure_reason}")
     event_counts = summary.event_summary.get("event_counts", {})

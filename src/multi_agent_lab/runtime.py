@@ -23,6 +23,7 @@ from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
 from multi_agent_lab.core.event_noise import EventNoiseReducer
 from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.file_path_normalizer import FilePathNormalizer
+from multi_agent_lab.core.fix_target_guard import FixTargetGuard
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.project_memory_service import ProjectMemoryService
@@ -66,6 +67,7 @@ class RuntimeSummary:
     invalid_paths_detected: int = 0
     invalid_paths_ignored: int = 0
     sanitized_files_count: int = 0
+    wrong_target_fix_count: int = 0
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -113,6 +115,7 @@ class AgentRuntime:
         file_awareness = FileAwarenessService(file_tool)
         path_normalizer = FilePathNormalizer(workspace.root)
         content_sanitizer = CodeContentSanitizer()
+        fix_target_guard = FixTargetGuard()
         llm_metrics = LLMCallMetrics()
         trace_recorder = LLMTraceRecorder(workspace.root / ".traces")
         context_builder = AgentContextBuilder(
@@ -135,6 +138,7 @@ class AgentRuntime:
             trace_recorder,
             path_normalizer,
             content_sanitizer,
+            fix_target_guard,
         )
 
         terminal_inbox = await bus.subscribe_many(
@@ -208,6 +212,7 @@ class AgentRuntime:
                 llm_metrics,
                 file_awareness,
                 content_sanitizer,
+                fix_target_guard,
             )
         finally:
             for agent in agents:
@@ -228,6 +233,7 @@ class AgentRuntime:
         trace_recorder: LLMTraceRecorder,
         path_normalizer: FilePathNormalizer,
         content_sanitizer: CodeContentSanitizer,
+        fix_target_guard: FixTargetGuard,
     ) -> list[BaseAgent]:
         """Create all agents for the runtime."""
         planner_llm = self._llm_client(
@@ -267,6 +273,7 @@ class AgentRuntime:
                 graph_store,
                 event_logger,
                 content_sanitizer,
+                fix_target_guard,
             ),
             TesterAgent("tester", bus, file_tool, event_logger),
             TaskCoordinatorAgent(
@@ -321,6 +328,7 @@ class AgentRuntime:
         llm_metrics: LLMCallMetrics,
         file_awareness: FileAwarenessService,
         content_sanitizer: CodeContentSanitizer,
+        fix_target_guard: FixTargetGuard,
     ) -> RuntimeSummary:
         """Build the final runtime summary."""
         completed = 0
@@ -374,6 +382,7 @@ class AgentRuntime:
             invalid_paths_detected=file_awareness.invalid_paths_detected,
             invalid_paths_ignored=file_awareness.invalid_paths_ignored,
             sanitized_files_count=content_sanitizer.sanitized_files_count,
+            wrong_target_fix_count=fix_target_guard.wrong_target_fix_count,
             details=dict(terminal_event.content or {}),
         )
 

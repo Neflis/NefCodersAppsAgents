@@ -262,7 +262,7 @@ Estrategias actuales:
 
 `CoderAgent` usa ese contexto para leer archivos relacionados y publicar `FIX_PROPOSED` con `fix_strategy`, `fix_reasoning`, `diff_summary`, `based_on_error` y un hash simple del contenido. `ProjectMemory` guarda errores, fixes aplicados y hashes de fixes para evitar repetir exactamente el mismo cambio.
 
-`fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`.
+`fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`. Para modulos locales como `app`, `todo` o `models`, el target del fix son archivos Python (`tests/test_app.py`, `app.py`), no `requirements.txt`. Si se intenta aplicar un fix local a `requirements.txt`, `FileAgent` lo rechaza como `wrong_target_fix`.
 
 Limites actuales:
 
