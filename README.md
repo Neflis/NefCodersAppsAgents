@@ -224,6 +224,8 @@ cmd, powershell, bash, curl, wget, rm, del, git, npm, docker
 
 La ejecucion se comunica por eventos: `TEST_EXECUTION_REQUESTED`, `TEST_EXECUTION_STARTED`, `TEST_EXECUTION_PASSED` y `TEST_EXECUTION_FAILED`. Si falla, el resultado incluye salida truncada y feedback sobre imports faltantes, errores de sintaxis o timeout. El coordinator mantiene un maximo de 2 retries automaticos antes de bloquear la tarea.
 
+`pytest` se ejecuta con `cwd=workspace` y `PYTHONPATH` apuntando al workspace para que proyectos Python simples puedan importar modulos locales como `app.py` desde `tests/test_app.py`.
+
 ## Auto-fix tras fallos
 
 Cuando una ejecucion controlada falla, el sistema no detiene el workflow de inmediato. `TaskCoordinatorAgent` convierte `TEST_EXECUTION_FAILED` en una tarea de correccion `coding` y publica `FIX_REQUESTED`.
@@ -255,8 +257,12 @@ Estrategias actuales:
 - `fix_route`
 - `fix_test`
 - `rewrite_function`
+- `strip_markdown_fences`
+- `fix_local_module_import`
 
 `CoderAgent` usa ese contexto para leer archivos relacionados y publicar `FIX_PROPOSED` con `fix_strategy`, `fix_reasoning`, `diff_summary`, `based_on_error` y un hash simple del contenido. `ProjectMemory` guarda errores, fixes aplicados y hashes de fixes para evitar repetir exactamente el mismo cambio.
+
+`fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`.
 
 Limites actuales:
 

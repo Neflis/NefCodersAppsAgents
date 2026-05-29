@@ -89,6 +89,27 @@ def test_project_memory_does_not_repeat_fix_hash(tmp_path: Path) -> None:
     assert service.has_fix_hash("corr-1", "abc123")
 
 
+def test_project_memory_records_app_exports(tmp_path: Path) -> None:
+    service = ProjectMemoryService(SQLiteStore(f"sqlite:///{tmp_path / 'memory.db'}"))
+
+    service.update_from_event(
+        Message(
+            sender="coder",
+            type=EventType.CODE_PROPOSED,
+            content={
+                "path": "app.py",
+                "content": "from flask import Flask\napp = Flask(__name__)\n"
+                "def create_app():\n    return app\n",
+            },
+            correlation_id="corr-1",
+        )
+    )
+
+    memory = service.get_memory("corr-1")
+    assert "app" in memory.exported_symbols
+    assert "create_app" in memory.exported_symbols
+
+
 def test_context_builder_includes_project_memory_summary(tmp_path: Path) -> None:
     service = ProjectMemoryService(SQLiteStore(f"sqlite:///{tmp_path / 'memory.db'}"))
     service.add_file("corr-1", "app.py")

@@ -160,6 +160,8 @@ class TesterExecutionAgent(BaseAgent):
     def _suggest_focus_files(self, stdout: str, stderr: str) -> list[str]:
         """Suggest safe files for a coder fix task."""
         combined = f"{stdout}\n{stderr}"
+        if "No module named 'app'" in combined or 'No module named "app"' in combined:
+            return ["tests/test_app.py", "app.py"]
         if "requirements" in combined or "ModuleNotFoundError" in combined:
             return ["requirements.txt", "app.py"]
         if "README" in combined:

@@ -76,10 +76,50 @@ def test_failure_analysis_detects_markdown_fence_syntax_error() -> None:
     assert strategy == FixStrategy.STRIP_MARKDOWN_FENCES
 
 
+def test_module_not_found_app_uses_local_import_strategy() -> None:
+    context = FailureAnalysisService().parse_pytest_output(
+        "",
+        "ModuleNotFoundError: No module named 'app'",
+    )
+    strategy = CoderAgent("coder", None)._select_fix_strategy(  # type: ignore[arg-type]
+        context.to_dict(),
+        "tests/test_app.py",
+    )
+
+    assert context.failure_type == "LocalModuleNotFoundError"
+    assert context.suspected_files == ["tests/test_app.py", "app.py"]
+    assert strategy == FixStrategy.FIX_LOCAL_MODULE_IMPORT
+
+
 def test_reviewer_rejects_python_markdown_fences() -> None:
     reviewer = ReviewerAgent("reviewer", None, TaskGraphStore())  # type: ignore[arg-type]
 
     assert not reviewer._is_valid_content("app.py", "```python\nprint('bad')\n```\n")
+
+
+def test_local_import_fix_removes_create_app_and_db_imports(tmp_path: Path) -> None:
+    workspace = WorkspaceManager(tmp_path / "workspace")
+    file_tool = FileTool(workspace)
+    file_tool.write_file("app.py", "from flask import Flask\napp = Flask(__name__)\n")
+    file_tool.write_file(
+        "tests/test_app.py",
+        "from app import create_app, db\n\n\ndef test_health():\n"
+        "    client = create_app().test_client()\n    assert client.get('/todos').status_code\n",
+    )
+    coder = CoderAgent(
+        "coder",
+        None,  # type: ignore[arg-type]
+        context_builder=AgentContextBuilder(
+            file_tool=file_tool,
+            file_awareness=FileAwarenessService(file_tool),
+        ),
+    )
+
+    fixed = coder._direct_local_import_fix("tests/test_app.py")
+
+    assert "from app import app" in fixed
+    assert "db" not in fixed
+    assert "create_app" not in fixed
 
 
 async def test_auto_fix_removes_fences_and_pytest_can_continue(tmp_path: Path) -> None:

@@ -32,6 +32,22 @@ def test_pytest_is_allowed(tmp_path: Path) -> None:
     assert result.exit_code == 0
 
 
+def test_pytest_can_import_workspace_app_module(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+    workspace = tmp_path / "workspace"
+    tests_dir = workspace / "tests"
+    tests_dir.mkdir(parents=True)
+    (workspace / "app.py").write_text("app = object()\n", encoding="utf-8")
+    (tests_dir / "test_app.py").write_text(
+        "from app import app\n\n\ndef test_imports_app():\n    assert app is not None\n",
+        encoding="utf-8",
+    )
+
+    result = tool.run_pytest()
+
+    assert result.success
+
+
 def test_shell_commands_are_blocked(tmp_path: Path) -> None:
     tool = command_tool(tmp_path)
 

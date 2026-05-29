@@ -75,6 +75,8 @@ class ProjectMemoryService:
             if isinstance(code, str):
                 self._detect_framework(memory, code)
                 self._detect_conventions(memory, code)
+                if path == "app.py":
+                    self._detect_exported_symbols(memory, code)
 
         if event_type == EventType.FILE_WRITTEN:
             path = content.get("path")
@@ -138,6 +140,7 @@ class ProjectMemoryService:
             f"Reviewer feedback: {'; '.join(memory.reviewer_feedback[-5:]) or '(none)'}",
             f"Known errors: {'; '.join(memory.known_errors[-5:]) or '(none)'}",
             f"Fixes applied: {'; '.join(memory.fixes_applied[-5:]) or '(none)'}",
+            f"Exports: {', '.join(memory.exported_symbols) or '(none)'}",
             f"Completed: {'; '.join(memory.completed_tasks_summary[-5:]) or '(none)'}",
         ]
         summary = "\n".join(lines)
@@ -182,3 +185,12 @@ class ProjectMemoryService:
             memory.add_unique("coding_conventions", "Use Flask route decorators.")
         if "jsonify" in code:
             memory.add_unique("coding_conventions", "Return JSON responses with jsonify.")
+
+    def _detect_exported_symbols(self, memory: ProjectMemory, code: str) -> None:
+        """Record simple app.py exports used by tests."""
+        if "app = Flask(" in code:
+            memory.add_unique("exported_symbols", "app")
+        if "def create_app" in code:
+            memory.add_unique("exported_symbols", "create_app")
+        if "db =" in code:
+            memory.add_unique("exported_symbols", "db")

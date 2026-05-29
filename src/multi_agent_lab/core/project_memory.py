@@ -27,6 +27,7 @@ class ProjectMemory:
     completed_tasks_summary: list[str] = field(default_factory=list)
     fixes_applied: list[str] = field(default_factory=list)
     proposed_fix_hashes: list[str] = field(default_factory=list)
+    exported_symbols: list[str] = field(default_factory=list)
     updated_at: str = field(default_factory=utc_now_iso)
 
     def touch(self) -> None:
@@ -56,6 +57,7 @@ class ProjectMemory:
             "completed_tasks_summary": self.completed_tasks_summary,
             "fixes_applied": self.fixes_applied,
             "proposed_fix_hashes": self.proposed_fix_hashes,
+            "exported_symbols": self.exported_symbols,
             "updated_at": self.updated_at,
         }
 
@@ -74,5 +76,6 @@ class ProjectMemory:
             completed_tasks_summary=list(data.get("completed_tasks_summary", [])),
             fixes_applied=list(data.get("fixes_applied", [])),
             proposed_fix_hashes=list(data.get("proposed_fix_hashes", [])),
+            exported_symbols=list(data.get("exported_symbols", [])),
             updated_at=str(data.get("updated_at", utc_now_iso())),
         )

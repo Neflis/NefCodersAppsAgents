@@ -20,6 +20,7 @@ class FixStrategy(StrEnum):
     FIX_TEST = "fix_test"
     REWRITE_FUNCTION = "rewrite_function"
     STRIP_MARKDOWN_FENCES = "strip_markdown_fences"
+    FIX_LOCAL_MODULE_IMPORT = "fix_local_module_import"
 
 
 @dataclass(slots=True)
@@ -98,6 +99,8 @@ class FailureAnalysisService:
         lowered = text.lower()
         if "syntaxerror" in lowered and "```" in text:
             return "MarkdownFenceSyntaxError"
+        if "no module named 'app'" in lowered or 'no module named "app"' in lowered:
+            return "LocalModuleNotFoundError"
         if "no module named" in lowered:
             return "ModuleNotFoundError"
         if "flask" in lowered and ("route" in lowered or "404" in lowered):
@@ -122,7 +125,11 @@ class FailureAnalysisService:
                 continue
             if normalized not in files:
                 files.append(normalized)
-        if "No module named" in text and "requirements.txt" not in files:
+        if (
+            "No module named 'app'" in text or 'No module named "app"' in text
+        ) and "app.py" not in files:
+            files.extend(path for path in ("tests/test_app.py", "app.py") if path not in files)
+        elif "No module named" in text and "requirements.txt" not in files:
             files.insert(0, "requirements.txt")
         return files
 

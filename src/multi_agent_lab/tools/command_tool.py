@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,7 @@ class CommandTool:
             completed = subprocess.run(
                 command,
                 cwd=self.workspace.root,
+                env=self._execution_env(),
                 shell=False,
                 capture_output=True,
                 text=True,
@@ -163,6 +165,16 @@ class CommandTool:
         if command_id == "pip":
             return ["python", "-m", "pip", "check"]
         raise CommandToolError(f"Command is not whitelisted: {command_id}")
+
+    def _execution_env(self) -> dict[str, str]:
+        """Return an execution environment that can import local workspace modules."""
+        env = os.environ.copy()
+        workspace_path = str(self.workspace.root)
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            workspace_path if not existing else f"{workspace_path}{os.pathsep}{existing}"
+        )
+        return env
 
     def _truncate(self, text: str) -> str:
         if len(text) <= self.max_output_chars:
