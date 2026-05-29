@@ -89,6 +89,10 @@ def print_summary(summary: RuntimeSummary) -> None:
         f"fail={summary.execution_failure_count} "
         f"fix_attempts={summary.fix_attempts}"
     )
+    if summary.detected_failure_types:
+        print(f"Failure types: {', '.join(summary.detected_failure_types)}")
+    if summary.repeated_failures:
+        print(f"Repeated failures: {', '.join(summary.repeated_failures)}")
     if summary.final_failure_reason:
         print(f"Final failure: {summary.final_failure_reason}")
     event_counts = summary.event_summary.get("event_counts", {})

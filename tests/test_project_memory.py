@@ -72,6 +72,23 @@ def test_project_memory_stores_reviewer_feedback(tmp_path: Path) -> None:
     assert "requirements.txt debe incluir Flask." in memory.known_errors
 
 
+def test_project_memory_does_not_repeat_fix_hash(tmp_path: Path) -> None:
+    service = ProjectMemoryService(SQLiteStore(f"sqlite:///{tmp_path / 'memory.db'}"))
+
+    message = Message(
+        sender="coder",
+        type=EventType.FIX_PROPOSED,
+        content={"content_hash": "abc123"},
+        correlation_id="corr-1",
+    )
+    service.update_from_event(message)
+    service.update_from_event(message)
+
+    memory = service.get_memory("corr-1")
+    assert memory.proposed_fix_hashes == ["abc123"]
+    assert service.has_fix_hash("corr-1", "abc123")
+
+
 def test_context_builder_includes_project_memory_summary(tmp_path: Path) -> None:
     service = ProjectMemoryService(SQLiteStore(f"sqlite:///{tmp_path / 'memory.db'}"))
     service.add_file("corr-1", "app.py")

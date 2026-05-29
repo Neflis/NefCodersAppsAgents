@@ -243,6 +243,21 @@ TEST_EXECUTION_FAILED
 
 Los eventos `FIX_REQUESTED`, `FIX_PROPOSED`, `FIX_APPLIED` y `RETEST_REQUESTED` cuentan como progreso real: el supervisor no debe cortar el workflow por limite de eventos mientras haya un fix en curso. Si las correcciones no consiguen que la validacion pase, el workflow termina con `WORKFLOW_HALTED` y `final_failure_reason=max_fix_attempts_exceeded`.
 
+## Failure-aware fixing
+
+`FailureAnalysisService` analiza `stdout` y `stderr` de pytest antes de pedir una correccion. El coordinator crea un `FailureContext` con tipo de fallo, test fallido, linea, traceback, archivos sospechosos, simbolos sospechosos y numero de retry. Ese contexto viaja en la metadata de `FIX_REQUESTED`.
+
+Estrategias actuales:
+
+- `patch_existing_file`
+- `add_missing_import`
+- `add_missing_dependency`
+- `fix_route`
+- `fix_test`
+- `rewrite_function`
+
+`CoderAgent` usa ese contexto para leer archivos relacionados y publicar `FIX_PROPOSED` con `fix_strategy`, `fix_reasoning`, `diff_summary`, `based_on_error` y un hash simple del contenido. `ProjectMemory` guarda errores, fixes aplicados y hashes de fixes para evitar repetir exactamente el mismo cambio.
+
 Limites actuales:
 
 - solo se reemplaza un archivo seguro por fix

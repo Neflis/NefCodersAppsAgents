@@ -20,6 +20,9 @@ class ProjectMemoryService:
         EventType.PROJECT_REVIEW_REJECTED,
         EventType.TEST_PASSED,
         EventType.TEST_FAILED,
+        EventType.TEST_EXECUTION_FAILED,
+        EventType.FIX_PROPOSED,
+        EventType.FIX_APPLIED,
     }
 
     def __init__(self, store: SQLiteStore | None = None) -> None:
@@ -101,6 +104,24 @@ class ProjectMemoryService:
             self.add_error(correlation_id, str(error))
             memory = self.get_memory(correlation_id)
 
+        if event_type == EventType.TEST_EXECUTION_FAILED:
+            context = content.get("failure_context", {})
+            failure_type = (
+                context.get("failure_type") if isinstance(context, dict) else "execution_failed"
+            )
+            self.add_error(correlation_id, str(failure_type or "execution_failed"))
+            memory = self.get_memory(correlation_id)
+
+        if event_type == EventType.FIX_PROPOSED:
+            content_hash = content.get("content_hash")
+            if isinstance(content_hash, str):
+                memory.add_unique("proposed_fix_hashes", content_hash)
+
+        if event_type == EventType.FIX_APPLIED:
+            path = content.get("path")
+            if isinstance(path, str):
+                memory.add_unique("fixes_applied", path)
+
         memory.touch()
         self._persist(memory)
         return memory
@@ -116,6 +137,7 @@ class ProjectMemoryService:
             f"Conventions: {'; '.join(memory.coding_conventions[-5:]) or '(none)'}",
             f"Reviewer feedback: {'; '.join(memory.reviewer_feedback[-5:]) or '(none)'}",
             f"Known errors: {'; '.join(memory.known_errors[-5:]) or '(none)'}",
+            f"Fixes applied: {'; '.join(memory.fixes_applied[-5:]) or '(none)'}",
             f"Completed: {'; '.join(memory.completed_tasks_summary[-5:]) or '(none)'}",
         ]
         summary = "\n".join(lines)
@@ -140,6 +162,10 @@ class ProjectMemoryService:
         memory = self.get_memory(correlation_id)
         memory.add_unique("files_created", path)
         self._persist(memory)
+
+    def has_fix_hash(self, correlation_id: str, content_hash: str) -> bool:
+        """Return whether a fix hash has already been proposed."""
+        return content_hash in self.get_memory(correlation_id).proposed_fix_hashes
 
     def _persist(self, memory: ProjectMemory) -> None:
         if self.store is not None:

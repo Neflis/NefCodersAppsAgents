@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Literal
@@ -57,6 +58,9 @@ class RuntimeSummary:
     execution_failure_count: int = 0
     fix_attempts: int = 0
     final_failure_reason: str = ""
+    detected_failure_types: list[str] = field(default_factory=list)
+    fixes_attempted: int = 0
+    repeated_failures: list[str] = field(default_factory=list)
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -307,6 +311,11 @@ class AgentRuntime:
                 node.status in {TaskNodeStatus.FAILED, TaskNodeStatus.BLOCKED}
                 for node in graph.nodes.values()
             )
+            failure_types, repeated_failures, fixes_attempted = self._fix_summary(graph)
+        else:
+            failure_types = []
+            repeated_failures = []
+            fixes_attempted = 0
 
         status: RuntimeStatus = "completed"
         if terminal_event.type == EventType.WORKFLOW_HALTED:
@@ -336,7 +345,28 @@ class AgentRuntime:
             ),
             fix_attempts=self._event_count(noise_reducer, EventType.FIX_REQUESTED),
             final_failure_reason=str(dict(terminal_event.content or {}).get("reason", "")),
+            detected_failure_types=failure_types,
+            fixes_attempted=fixes_attempted,
+            repeated_failures=repeated_failures,
             details=dict(terminal_event.content or {}),
+        )
+
+    def _fix_summary(self, graph) -> tuple[list[str], list[str], int]:
+        """Summarize fix attempts from the task graph."""
+        failure_counter: Counter[str] = Counter()
+        fixes_attempted = 0
+        for node in graph.nodes.values():
+            if node.payload.get("type") != "fix":
+                continue
+            fixes_attempted += 1
+            context = node.payload.get("failure_context", {})
+            if isinstance(context, dict):
+                failure_type = str(context.get("failure_type", "UnknownFailure"))
+                failure_counter[failure_type] += 1
+        return (
+            sorted(failure_counter),
+            sorted(name for name, count in failure_counter.items() if count > 1),
+            fixes_attempted,
         )
 
     async def _wait_for_terminal_event(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from multi_agent_lab.agents.base_agent import BaseAgent
+from multi_agent_lab.core.failure_analysis import FailureAnalysisService
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.task_graph import TaskNode, TaskNodeStatus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
@@ -36,6 +37,7 @@ class TaskCoordinatorAgent(BaseAgent):
         self.max_retries = max_retries
         self.max_fix_attempts = max_fix_attempts
         self._fix_attempts: dict[str, int] = {}
+        self.failure_analysis = FailureAnalysisService()
 
     async def handle_message(self, message: Message) -> None:
         """Apply task graph transitions caused by worker events."""
@@ -127,7 +129,12 @@ class TaskCoordinatorAgent(BaseAgent):
             return
 
         self._fix_attempts[key] = attempts + 1
-        fix_metadata = self._fix_metadata(message, attempts + 1)
+        failure_context = self.failure_analysis.parse_pytest_output(
+            str(message.content.get("stdout", "")),
+            str(message.content.get("stderr", "")),
+            retry_number=attempts + 1,
+        )
+        fix_metadata = self._fix_metadata(message, attempts + 1, failure_context.to_dict())
         fix_task = graph.add_task(
             TaskNode(
                 title=f"Corregir fallo de ejecucion #{attempts + 1}",
@@ -139,7 +146,9 @@ class TaskCoordinatorAgent(BaseAgent):
                     "attempt": attempts + 1,
                     "max_fix_attempts": self.max_fix_attempts,
                     "failure": message.content,
-                    "path": self._primary_focus_file(message),
+                    "failure_context": failure_context.to_dict(),
+                    "failure_summary": self.failure_analysis.summarize_failure(failure_context),
+                    "path": self._primary_focus_file(message, failure_context.to_dict()),
                     "suggested_focus_files": message.content.get("suggested_focus_files", []),
                     "command_id": message.content.get("command_id", "pytest"),
                     "args": message.content.get("args", []),
@@ -156,7 +165,12 @@ class TaskCoordinatorAgent(BaseAgent):
         await self.publish(EventType.TASK_READY, payload, source=message, metadata=fix_metadata)
         await self._publish_graph_updated(message)
 
-    def _fix_metadata(self, message: Message, attempt: int) -> dict[str, object]:
+    def _fix_metadata(
+        self,
+        message: Message,
+        attempt: int,
+        failure_context: dict[str, object],
+    ) -> dict[str, object]:
         """Build metadata for a generated fix task."""
         return {
             "failed_command": message.content.get("command", ""),
@@ -164,12 +178,23 @@ class TaskCoordinatorAgent(BaseAgent):
             "stderr": message.content.get("stderr", ""),
             "suggested_focus_files": message.content.get("suggested_focus_files", []),
             "fix_attempt": attempt,
+            "failure_context": failure_context,
+            "failure_analysis": failure_context,
         }
 
-    def _primary_focus_file(self, message: Message) -> str:
+    def _primary_focus_file(
+        self,
+        message: Message,
+        failure_context: dict[str, object] | None = None,
+    ) -> str:
         focus_files = message.content.get("suggested_focus_files", [])
         if isinstance(focus_files, list) and focus_files:
             return str(focus_files[0])
+        context = failure_context or message.content.get("failure_context", {})
+        if isinstance(context, dict):
+            suspected_files = context.get("suspected_files", [])
+            if isinstance(suspected_files, list) and suspected_files:
+                return str(suspected_files[0])
         failed_files = message.content.get("failed_files", [])
         if isinstance(failed_files, list) and failed_files:
             return str(failed_files[0])

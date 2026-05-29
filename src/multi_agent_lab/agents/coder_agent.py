@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
+from multi_agent_lab.core.failure_analysis import FixStrategy
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
@@ -81,15 +83,34 @@ class CoderAgent(BaseAgent):
         await self.claim_task(message)
         payload = dict(message.content.get("payload", {}))
         failure = dict(payload.get("failure", {}))
+        failure_context = dict(payload.get("failure_context", {}))
         target_path = str(payload.get("path", "app.py"))
-        focus_files = list(payload.get("suggested_focus_files", []))
+        focus_files = list(
+            failure_context.get("suspected_files", []) or payload.get("suggested_focus_files", [])
+        )
         based_on_error = self._failure_text(failure)
-        content = await self._fix_content(message, target_path, focus_files, based_on_error)
+        strategy = self._select_fix_strategy(failure_context, target_path)
+        content = await self._fix_content(
+            message,
+            target_path,
+            focus_files,
+            based_on_error,
+            strategy,
+        )
+        content_hash = sha256(content.encode("utf-8")).hexdigest()
+        if self._fix_repeated(message, content_hash):
+            content = self._make_fix_variant(content, strategy, target_path)
+            content_hash = sha256(content.encode("utf-8")).hexdigest()
         result = {
             "path": target_path,
             "content": content,
+            "fix_strategy": strategy.value,
             "reason": "Apply fix based on controlled execution failure.",
+            "fix_reasoning": self._fix_reasoning(strategy, failure_context, target_path),
+            "diff_summary": f"Replace {target_path} using {strategy.value}.",
             "based_on_error": based_on_error[:1000],
+            "failure_context": failure_context,
+            "content_hash": content_hash,
             "execution_task_id": payload.get("execution_task_id"),
             "command_id": payload.get("command_id", "pytest"),
             "args": list(payload.get("args", [])),
@@ -167,10 +188,11 @@ class CoderAgent(BaseAgent):
         target_path: str,
         focus_files: list[object],
         based_on_error: str,
+        strategy: FixStrategy,
     ) -> str:
         """Generate deterministic or LLM-backed fix content."""
         if self.ollama_client is None:
-            return self._mock_fix_content(target_path, based_on_error)
+            return self._mock_fix_content(target_path, based_on_error, strategy)
         self.context_builder.record_event(message)
         prompt = PromptTemplate(
             identity="CoderAgent",
@@ -187,6 +209,7 @@ class CoderAgent(BaseAgent):
                     "path": target_path,
                     "payload": message.content.get("payload", {}),
                     "based_on_error": based_on_error,
+                    "fix_strategy": strategy.value,
                 },
                 workspace_paths=[str(path) for path in focus_files],
             ),
@@ -195,7 +218,7 @@ class CoderAgent(BaseAgent):
                 "reasoning_summary": "short text",
             },
             example_json_output={
-                "content": self._mock_fix_content(target_path, based_on_error),
+                "content": self._mock_fix_content(target_path, based_on_error, strategy),
                 "reasoning_summary": "Fixed the failing assertion.",
             },
         ).render()
@@ -207,7 +230,7 @@ class CoderAgent(BaseAgent):
         except (InvalidJSONError, OllamaClientError) as error:
             logger.info("Coder fix LLM no disponible; usando fix determinista: %s", error)
             self.ollama_client.record_fallback()
-        return self._mock_fix_content(target_path, based_on_error)
+        return self._mock_fix_content(target_path, based_on_error, strategy)
 
     def _failure_text(self, failure: dict[str, object]) -> str:
         """Join relevant failure fields for fix context."""
@@ -219,9 +242,61 @@ class CoderAgent(BaseAgent):
             ]
         ).strip()
 
-    def _mock_fix_content(self, target_path: str, based_on_error: str) -> str:
+    def _select_fix_strategy(
+        self,
+        failure_context: dict[str, object],
+        target_path: str,
+    ) -> FixStrategy:
+        """Select a fix strategy from failure type and target file."""
+        failure_type = str(failure_context.get("failure_type", ""))
+        if failure_type == "ModuleNotFoundError":
+            return FixStrategy.ADD_MISSING_DEPENDENCY
+        if failure_type == "ImportError":
+            return FixStrategy.ADD_MISSING_IMPORT
+        if failure_type == "SyntaxError":
+            return FixStrategy.PATCH_EXISTING_FILE
+        if failure_type == "FlaskRouteError":
+            return FixStrategy.FIX_ROUTE
+        if target_path.startswith("tests/"):
+            return FixStrategy.FIX_TEST
+        if failure_type in {"AttributeError", "NameError"}:
+            return FixStrategy.REWRITE_FUNCTION
+        return FixStrategy.PATCH_EXISTING_FILE
+
+    def _fix_reasoning(
+        self,
+        strategy: FixStrategy,
+        failure_context: dict[str, object],
+        target_path: str,
+    ) -> str:
+        """Return compact reasoning for traceable fix proposals."""
+        failure_type = failure_context.get("failure_type", "UnknownFailure")
+        failing_test = failure_context.get("failing_test", "")
+        return (
+            f"strategy={strategy.value}; failure_type={failure_type}; "
+            f"target={target_path}; failing_test={failing_test}"
+        )
+
+    def _fix_repeated(self, message: Message, content_hash: str) -> bool:
+        memory = getattr(self.context_builder, "project_memory", None)
+        if memory is None:
+            return False
+        return bool(memory.has_fix_hash(message.correlation_id or message.id, content_hash))
+
+    def _make_fix_variant(self, content: str, strategy: FixStrategy, target_path: str) -> str:
+        """Make a repeated deterministic fix visibly different."""
+        if strategy == FixStrategy.ADD_MISSING_DEPENDENCY or target_path.endswith(".py"):
+            return content.rstrip() + "\n# retry: dependency retained\n"
+        return content.rstrip() + "\n<!-- retry: adjusted fix -->\n"
+
+    def _mock_fix_content(
+        self,
+        target_path: str,
+        based_on_error: str,
+        strategy: FixStrategy = FixStrategy.PATCH_EXISTING_FILE,
+    ) -> str:
         """Return deterministic replacement content for common demo failures."""
-        if target_path == "requirements.txt" or "ModuleNotFoundError" in based_on_error:
+        if strategy == FixStrategy.ADD_MISSING_DEPENDENCY or target_path == "requirements.txt":
             return "Flask>=3.0\n"
         if target_path == "README.md" or "README" in based_on_error:
             return "\n".join(

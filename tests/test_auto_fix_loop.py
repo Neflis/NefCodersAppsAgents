@@ -71,7 +71,12 @@ async def test_pytest_failure_generates_fix_requested() -> None:
     assert event.content["payload"]["path"] == "README.md"
     assert event.metadata["failed_command"] == "pytest"
     assert event.metadata["fix_attempt"] == 1
+    assert event.metadata["failure_context"]["failure_type"] == "AssertionError"
     assert ready.content["payload"]["type"] == "fix"
+    assert (
+        ready.content["payload"]["failure_context"]["failing_test"]
+        == "tests/test_app.py::test_readme"
+    )
 
 
 async def test_coder_proposes_fix_using_stderr() -> None:
@@ -101,6 +106,8 @@ async def test_coder_proposes_fix_using_stderr() -> None:
     assert event.content["path"] == "README.md"
     assert "/todos" in event.content["content"]
     assert "AssertionError" in event.content["based_on_error"]
+    assert event.content["fix_strategy"] == "patch_existing_file"
+    assert event.content["content_hash"]
 
 
 async def test_file_agent_applies_fix(tmp_path: Path) -> None:

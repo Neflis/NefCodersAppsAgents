@@ -25,6 +25,8 @@ class ProjectMemory:
     known_errors: list[str] = field(default_factory=list)
     reviewer_feedback: list[str] = field(default_factory=list)
     completed_tasks_summary: list[str] = field(default_factory=list)
+    fixes_applied: list[str] = field(default_factory=list)
+    proposed_fix_hashes: list[str] = field(default_factory=list)
     updated_at: str = field(default_factory=utc_now_iso)
 
     def touch(self) -> None:
@@ -52,6 +54,8 @@ class ProjectMemory:
             "known_errors": self.known_errors,
             "reviewer_feedback": self.reviewer_feedback,
             "completed_tasks_summary": self.completed_tasks_summary,
+            "fixes_applied": self.fixes_applied,
+            "proposed_fix_hashes": self.proposed_fix_hashes,
             "updated_at": self.updated_at,
         }
 
@@ -68,5 +72,7 @@ class ProjectMemory:
             known_errors=list(data.get("known_errors", [])),
             reviewer_feedback=list(data.get("reviewer_feedback", [])),
             completed_tasks_summary=list(data.get("completed_tasks_summary", [])),
+            fixes_applied=list(data.get("fixes_applied", [])),
+            proposed_fix_hashes=list(data.get("proposed_fix_hashes", [])),
             updated_at=str(data.get("updated_at", utc_now_iso())),
         )
