@@ -163,3 +163,48 @@ async def test_execution_agent_claims_ready_task(tmp_path: Path) -> None:
 
     event = await requested.get()
     assert event.content["command_id"] == "pytest"
+
+
+async def test_execution_agent_uses_run_pytest_entrypoint() -> None:
+    class FakeCommandTool:
+        def __init__(self) -> None:
+            self.used_run_pytest = False
+            self.used_run_command = False
+
+        def run_pytest(self):
+            self.used_run_pytest = True
+            return type(
+                "Result",
+                (),
+                {
+                    "success": True,
+                    "to_dict": lambda self: {
+                        "success": True,
+                        "exit_code": 0,
+                        "stdout": "",
+                        "stderr": "",
+                    },
+                },
+            )()
+
+        def run_command(self, command_id, args):  # noqa: ANN001
+            self.used_run_command = True
+            raise AssertionError("pytest must use run_pytest")
+
+    bus = MessageBus()
+    passed = await bus.subscribe(EventType.TEST_EXECUTION_PASSED)
+    tool = FakeCommandTool()
+    agent = ExecutionAgent("tester_execution", bus, tool)  # type: ignore[arg-type]
+
+    await agent.handle_message(
+        Message(
+            sender="coordinator",
+            type=EventType.TEST_EXECUTION_REQUESTED,
+            content={"task_id": "task-1", "command_id": "pytest", "args": []},
+            correlation_id="corr",
+        )
+    )
+
+    await passed.get()
+    assert tool.used_run_pytest
+    assert not tool.used_run_command

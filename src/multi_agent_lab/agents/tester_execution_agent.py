@@ -67,7 +67,7 @@ class TesterExecutionAgent(BaseAgent):
             source=message,
         )
         try:
-            result = self.command_tool.run_command(command_id, args)
+            result = self._run_controlled_command(command_id, args)
         except CommandToolError as error:
             await self._publish_failed(
                 message,
@@ -98,6 +98,15 @@ class TesterExecutionAgent(BaseAgent):
             return
 
         await self._publish_failed(message, task_id, payload)
+
+    def _run_controlled_command(self, command_id: str, args: list[object]):
+        """Run validation commands through their safest CommandTool entrypoints."""
+        normalized_args = [str(arg) for arg in args]
+        if command_id == "pytest":
+            if normalized_args:
+                raise CommandToolError("pytest arguments are not allowed.")
+            return self.command_tool.run_pytest()
+        return self.command_tool.run_command(command_id, normalized_args)
 
     async def _publish_failed(
         self,

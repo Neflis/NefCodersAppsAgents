@@ -106,6 +106,8 @@ class FailureAnalysisService:
         if "syntaxerror" in lowered and "```" in text:
             return "MarkdownFenceSyntaxError"
         missing_module = self._extract_missing_module(text)
+        if missing_module == "app":
+            return "LocalModuleNotFoundError"
         if missing_module and self.module_classifier.is_local_module(missing_module):
             return "LocalModuleNotFoundError"
         if missing_module or "no module named" in lowered:
@@ -137,7 +139,9 @@ class FailureAnalysisService:
                 continue
             if normalized not in files:
                 files.append(normalized)
-        if missing_module and self.module_classifier.is_local_module(missing_module):
+        if missing_module == "app" or (
+            missing_module and self.module_classifier.is_local_module(missing_module)
+        ):
             files = self._local_module_files(files, failing_test, missing_module)
         elif missing_module and self.module_classifier.is_external_dependency(missing_module):
             if "requirements.txt" not in files:
