@@ -48,6 +48,14 @@ def test_pytest_can_import_workspace_app_module(tmp_path: Path) -> None:
     assert result.success
 
 
+def test_pip_install_requirements_is_allowed(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+
+    command = tool._command_vector("pip", ["install", "-r", "requirements.txt"])
+
+    assert command == ["python", "-m", "pip", "install", "-r", "requirements.txt"]
+
+
 def test_shell_commands_are_blocked(tmp_path: Path) -> None:
     tool = command_tool(tmp_path)
 

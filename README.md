@@ -241,6 +241,18 @@ TEST_EXECUTION_FAILED
   -> pytest se ejecuta otra vez
 ```
 
+Si el fix modifica `requirements.txt` con estrategia `add_missing_dependency`, el retest espera a la instalacion controlada:
+
+```text
+FIX_APPLIED requirements.txt
+  -> DEPENDENCY_INSTALL_REQUESTED
+  -> DependencyInstallerAgent ejecuta pip install -r requirements.txt
+  -> DEPENDENCY_INSTALL_SUCCEEDED
+  -> RETEST_REQUESTED
+```
+
+`pip install -r requirements.txt` se ejecuta mediante `CommandTool`, con `shell=False`, `cwd=workspace` y whitelist estricta de argumentos.
+
 `max_fix_attempts` es 2 por defecto y `MAX_EVENTS_PER_WORKFLOW` es 200. Tambien puedes configurarlos mediante `.env` o CLI con `--max-fix-attempts` y `--max-events`.
 
 Los eventos `FIX_REQUESTED`, `FIX_PROPOSED`, `FIX_APPLIED` y `RETEST_REQUESTED` cuentan como progreso real: el supervisor no debe cortar el workflow por limite de eventos mientras haya un fix en curso. Si las correcciones no consiguen que la validacion pase, el workflow termina con `WORKFLOW_HALTED` y `final_failure_reason=max_fix_attempts_exceeded`.

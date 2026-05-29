@@ -10,6 +10,7 @@ from typing import Literal
 
 from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.agents.coder_agent import CoderAgent
+from multi_agent_lab.agents.dependency_installer_agent import DependencyInstallerAgent
 from multi_agent_lab.agents.file_agent import FileAgent
 from multi_agent_lab.agents.planner_agent import PlannerAgent
 from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
@@ -68,6 +69,8 @@ class RuntimeSummary:
     invalid_paths_ignored: int = 0
     sanitized_files_count: int = 0
     wrong_target_fix_count: int = 0
+    installed_dependencies: int = 0
+    dependency_install_failures: int = 0
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -297,6 +300,15 @@ class AgentRuntime:
                 -2,
                 TesterExecutionAgent("tester_execution", bus, command_tool, event_logger),
             )
+            agents.insert(
+                -2,
+                DependencyInstallerAgent(
+                    "dependency_installer",
+                    bus,
+                    command_tool,
+                    event_logger,
+                ),
+            )
         return agents
 
     def _llm_client(
@@ -383,6 +395,14 @@ class AgentRuntime:
             invalid_paths_ignored=file_awareness.invalid_paths_ignored,
             sanitized_files_count=content_sanitizer.sanitized_files_count,
             wrong_target_fix_count=fix_target_guard.wrong_target_fix_count,
+            installed_dependencies=self._event_count(
+                noise_reducer,
+                EventType.DEPENDENCY_INSTALL_SUCCEEDED,
+            ),
+            dependency_install_failures=self._event_count(
+                noise_reducer,
+                EventType.DEPENDENCY_INSTALL_FAILED,
+            ),
             details=dict(terminal_event.content or {}),
         )
 

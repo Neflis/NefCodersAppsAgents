@@ -92,6 +92,10 @@ class CommandTool:
         """Run pip check in the workspace."""
         return self.run_command("pip", ["check"])
 
+    def run_pip_install_requirements(self) -> CommandExecutionResult:
+        """Install dependencies from the workspace requirements file."""
+        return self.run_command("pip", ["install", "-r", "requirements.txt"])
+
     def run_command(self, command_id: str, args: list[str] | None = None) -> CommandExecutionResult:
         """Run a whitelisted command with validated arguments."""
         args = args or []
@@ -135,8 +139,9 @@ class CommandTool:
     def _validate_command(self, command_id: str, args: list[str]) -> None:
         if command_id not in self.allowed_commands:
             raise CommandToolError(f"Command is not whitelisted: {command_id}")
-        if command_id == "pip" and args != ["check"]:
-            raise CommandToolError("Only 'pip check' is allowed.")
+        if command_id == "pip":
+            self._validate_pip_args(args)
+            return
         if command_id == "pytest" and args:
             raise CommandToolError("pytest arguments are not allowed.")
         if command_id == "python" and len(args) != 1:
@@ -157,13 +162,23 @@ class CommandTool:
         except WorkspaceSecurityError as error:
             raise CommandToolError(str(error)) from error
 
+    def _validate_pip_args(self, args: list[str]) -> None:
+        if args == ["check"]:
+            return
+        if args == ["install", "-r", "requirements.txt"]:
+            self.workspace.validate_path("requirements.txt")
+            return
+        raise CommandToolError(
+            "Only 'pip check' and 'pip install -r requirements.txt' are allowed."
+        )
+
     def _command_vector(self, command_id: str, args: list[str]) -> list[str]:
         if command_id == "python":
             return ["python", *args]
         if command_id == "pytest":
             return ["python", "-m", "pytest"]
         if command_id == "pip":
-            return ["python", "-m", "pip", "check"]
+            return ["python", "-m", "pip", *args]
         raise CommandToolError(f"Command is not whitelisted: {command_id}")
 
     def _execution_env(self) -> dict[str, str]:

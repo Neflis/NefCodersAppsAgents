@@ -116,6 +116,11 @@ class TesterExecutionAgent(BaseAgent):
         )
 
     async def _request_retest(self, message: Message) -> None:
+        if (
+            message.type == EventType.FIX_APPLIED
+            and message.content.get("path") == "requirements.txt"
+        ):
+            return
         command_id = str(message.content.get("command_id", "pytest"))
         args = list(message.content.get("args", []))
         task_id = str(message.content.get("execution_task_id", message.content.get("task_id")))

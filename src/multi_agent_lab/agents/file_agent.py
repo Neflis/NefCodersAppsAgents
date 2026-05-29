@@ -8,6 +8,7 @@ from multi_agent_lab.agents.base_agent import BaseAgent
 from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.code_content_sanitizer import CodeContentSanitizer
+from multi_agent_lab.core.failure_analysis import FixStrategy
 from multi_agent_lab.core.fix_target_guard import FixTargetGuard
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
@@ -178,3 +179,20 @@ class FileAgent(BaseAgent):
             },
             source=message,
         )
+        if (
+            written_path == "requirements.txt"
+            and message.content.get("fix_strategy") == FixStrategy.ADD_MISSING_DEPENDENCY.value
+        ):
+            await self.publish(
+                EventType.DEPENDENCY_INSTALL_REQUESTED,
+                {
+                    "task_id": message.content["task_id"],
+                    "path": written_path,
+                    "requirements_path": "requirements.txt",
+                    "execution_task_id": message.content.get("execution_task_id"),
+                    "command_id": message.content.get("command_id", "pytest"),
+                    "args": list(message.content.get("args", [])),
+                    "fix_strategy": message.content.get("fix_strategy", ""),
+                },
+                source=message,
+            )

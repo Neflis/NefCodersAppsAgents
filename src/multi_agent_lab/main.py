@@ -102,6 +102,12 @@ def print_summary(summary: RuntimeSummary) -> None:
         print(f"Sanitized files: {summary.sanitized_files_count}")
     if summary.wrong_target_fix_count:
         print(f"Wrong target fixes rejected: {summary.wrong_target_fix_count}")
+    if summary.installed_dependencies or summary.dependency_install_failures:
+        print(
+            "Dependency installs: "
+            f"ok={summary.installed_dependencies} "
+            f"fail={summary.dependency_install_failures}"
+        )
     if summary.final_failure_reason:
         print(f"Final failure: {summary.final_failure_reason}")
     event_counts = summary.event_summary.get("event_counts", {})
