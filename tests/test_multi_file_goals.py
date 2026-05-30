@@ -345,6 +345,57 @@ async def test_spring_boot_user_crud_mock_workflow_completes(tmp_path: Path) -> 
     assert "src/main/java/com/example/demo/user/UserController.java" in summary.files_created
 
 
+async def test_angular_minimal_mock_generates_stable_baseline(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Crea una aplicación Angular mínima",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    package_json = (workspace / "package.json").read_text(encoding="utf-8")
+    angular_json = (workspace / "angular.json").read_text(encoding="utf-8")
+    tsconfig = (workspace / "tsconfig.json").read_text(encoding="utf-8")
+    main = (workspace / "src" / "main.ts").read_text(encoding="utf-8")
+    component = (workspace / "src" / "app" / "app.component.ts").read_text(encoding="utf-8")
+    template = (workspace / "src" / "app" / "app.component.html").read_text(encoding="utf-8")
+    assert summary.status == "completed"
+    assert sorted(summary.files_created) == [
+        "angular.json",
+        "package.json",
+        "src/app/app.component.html",
+        "src/app/app.component.ts",
+        "src/main.ts",
+        "tsconfig.json",
+    ]
+    assert "@angular/core" in package_json
+    assert '"build": "ngc -p tsconfig.json"' in package_json
+    assert "angular-minimal" in angular_json
+    assert "angularCompilerOptions" in tsconfig
+    assert "bootstrapApplication(AppComponent)" in main
+    assert "standalone: true" in component
+    assert "Angular Works" in template
+
+
+async def test_angular_minimal_mock_workflow_completes(tmp_path: Path) -> None:
+    runtime = AgentRuntime(
+        "Crea una aplicación Angular mínima",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert "package.json" in summary.files_created
+
+
 def test_reviewer_validates_spring_boot_project() -> None:
     reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
 
@@ -367,6 +418,27 @@ def test_reviewer_validates_spring_boot_project() -> None:
                 'MockMvc mockMvc; status().isOk(); content().string("OK");'
             ),
             "README.md": "Spring Boot API con GET /health.",
+        }
+    )
+
+    assert feedback == []
+
+
+def test_reviewer_validates_angular_project() -> None:
+    reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
+
+    feedback = reviewer._project_feedback(
+        {
+            "package.json": (
+                '{"scripts":{"build":"ngc -p tsconfig.json"},'
+                '"dependencies":{"@angular/core":"^17.3.0"},'
+                '"devDependencies":{"@angular/compiler-cli":"^17.3.0"}}'
+            ),
+            "angular.json": '{"projects":{"angular-minimal":{}}}',
+            "tsconfig.json": '{"angularCompilerOptions":{}}',
+            "src/main.ts": "bootstrapApplication(AppComponent);",
+            "src/app/app.component.ts": "@Component({standalone: true})",
+            "src/app/app.component.html": "<h1>Angular Works</h1>",
         }
     )
 

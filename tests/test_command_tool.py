@@ -105,6 +105,28 @@ def test_mvn_blocks_non_test_goals(tmp_path: Path) -> None:
         tool.run_command("mvn", [])
 
 
+def test_npm_install_and_build_are_allowed(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+
+    install = tool._command_vector("npm", ["install"])
+    build = tool._command_vector("npm", ["run", "build"])
+
+    assert Path(install[0]).name.lower() == "npm.cmd"
+    assert install[1:] == ["install"]
+    assert Path(build[0]).name.lower() == "npm.cmd"
+    assert build[1:] == ["run", "build"]
+
+
+def test_npm_blocks_other_commands(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+
+    with pytest.raises(CommandToolError):
+        tool.run_command("npm", ["test"])
+
+    with pytest.raises(CommandToolError):
+        tool.run_command("npm", ["run", "start"])
+
+
 def test_shell_commands_are_blocked(tmp_path: Path) -> None:
     tool = command_tool(tmp_path)
 
@@ -288,6 +310,33 @@ async def test_execution_agent_selects_mvn_when_pom_exists(tmp_path: Path) -> No
     assert event.content["args"] == ["test"]
 
 
+async def test_execution_agent_selects_npm_install_when_package_exists(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "package.json").write_text('{"scripts":{"build":"ngc"}}\n', encoding="utf-8")
+    bus = MessageBus()
+    requested = await bus.subscribe(EventType.TEST_EXECUTION_REQUESTED)
+    agent = ExecutionAgent("tester_execution", bus, command_tool(tmp_path))
+
+    await agent.handle_message(
+        Message(
+            sender="coordinator",
+            type=EventType.TASK_READY,
+            content={
+                "task_id": "task-1",
+                "required_capability": Capability.TESTING_EXECUTION.value,
+                "status": "READY",
+                "payload": {"command_id": "pytest", "args": []},
+            },
+            correlation_id="corr",
+        )
+    )
+
+    event = await requested.get()
+    assert event.content["command_id"] == "npm"
+    assert event.content["args"] == ["install"]
+
+
 async def test_execution_agent_runs_mvn_test_through_command_tool() -> None:
     class FakeCommandTool:
         def __init__(self) -> None:
@@ -328,3 +377,34 @@ async def test_execution_agent_runs_mvn_test_through_command_tool() -> None:
     assert tool.used_run_command
     assert tool.command_id == "mvn"
     assert tool.args == ["test"]
+
+
+async def test_execution_agent_publishes_build_events_for_npm_build() -> None:
+    class FakeCommandTool:
+        def run_command(self, command_id, args):  # noqa: ANN001
+            assert command_id == "npm"
+            assert args == ["run", "build"]
+            return CommandExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout="built",
+                stderr="",
+                duration=0.0,
+            )
+
+    bus = MessageBus()
+    started = await bus.subscribe(EventType.BUILD_STARTED)
+    passed = await bus.subscribe(EventType.BUILD_PASSED)
+    agent = ExecutionAgent("tester_execution", bus, FakeCommandTool())  # type: ignore[arg-type]
+
+    await agent.handle_message(
+        Message(
+            sender="coordinator",
+            type=EventType.TEST_EXECUTION_REQUESTED,
+            content={"task_id": "task-1", "command_id": "npm", "args": ["run", "build"]},
+            correlation_id="corr",
+        )
+    )
+
+    assert (await started.get()).content["command_id"] == "npm"
+    assert (await passed.get()).content["stdout"] == "built"

@@ -94,6 +94,8 @@ class PlannerAgent(BaseAgent):
             return self._build_flask_api_graph(graph, allow_execution)
         if self._is_python_cli_task_goal(goal_title):
             return self._build_python_cli_graph(graph, allow_execution)
+        if self._is_angular_minimal_goal(goal_title):
+            return self._build_angular_minimal_graph(graph, allow_execution)
         if self._is_spring_boot_crud_user_goal(goal_title):
             return self._build_spring_boot_user_crud_graph(graph, allow_execution)
         if self._is_spring_boot_goal(goal_title):
@@ -144,6 +146,126 @@ class PlannerAgent(BaseAgent):
                 payload={"path": target_path},
                 dependencies={write.id},
                 priority=4,
+            )
+        )
+        return graph
+
+    def _build_angular_minimal_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
+        """Create a deterministic Angular standalone app graph."""
+        package_json = graph.add_task(
+            TaskNode(
+                title="Crear package.json",
+                description="Configurar dependencias Angular 17 y script build.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "package.json", "artifact": "angular_package_json"},
+                priority=10,
+            )
+        )
+        angular_json = graph.add_task(
+            TaskNode(
+                title="Crear angular.json",
+                description="Configurar build Angular standalone.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "angular.json", "artifact": "angular_json"},
+                dependencies={package_json.id},
+                priority=9,
+            )
+        )
+        tsconfig = graph.add_task(
+            TaskNode(
+                title="Crear tsconfig.json",
+                description="Configurar TypeScript para Angular.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "tsconfig.json", "artifact": "angular_tsconfig"},
+                dependencies={angular_json.id},
+                priority=8,
+            )
+        )
+        main = graph.add_task(
+            TaskNode(
+                title="Crear src/main.ts",
+                description="Arrancar componente standalone.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "src/main.ts", "artifact": "angular_main"},
+                dependencies={tsconfig.id},
+                priority=7,
+            )
+        )
+        component = graph.add_task(
+            TaskNode(
+                title="Crear app.component.ts",
+                description="Definir componente standalone unico.",
+                required_capability=Capability.CODING.value,
+                payload={
+                    "path": "src/app/app.component.ts",
+                    "artifact": "angular_app_component",
+                },
+                dependencies={main.id},
+                priority=6,
+            )
+        )
+        template = graph.add_task(
+            TaskNode(
+                title="Crear app.component.html",
+                description="Mostrar Angular Works.",
+                required_capability=Capability.CODING.value,
+                payload={
+                    "path": "src/app/app.component.html",
+                    "artifact": "angular_app_template",
+                },
+                dependencies={component.id},
+                priority=5,
+            )
+        )
+        paths = [
+            "package.json",
+            "angular.json",
+            "tsconfig.json",
+            "src/main.ts",
+            "src/app/app.component.ts",
+            "src/app/app.component.html",
+        ]
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar coherencia final Angular",
+                description="Validar configuracion y componente standalone.",
+                required_capability=Capability.REVIEWING.value,
+                payload={"project_review": True, "paths": paths},
+                dependencies={template.id},
+                priority=4,
+            )
+        )
+        if allow_execution:
+            install = graph.add_task(
+                TaskNode(
+                    title="Instalar dependencias npm",
+                    description="Ejecutar npm install dentro del workspace.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "npm", "args": ["install"]},
+                    dependencies={review.id},
+                    priority=3,
+                )
+            )
+            graph.add_task(
+                TaskNode(
+                    title="Compilar aplicacion Angular",
+                    description="Ejecutar npm run build dentro del workspace.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "npm", "args": ["run", "build"]},
+                    dependencies={install.id},
+                    priority=2,
+                )
+            )
+            return graph
+
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia de archivos Angular",
+                description="Comprobar que los archivos finales existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={"paths": paths},
+                dependencies={review.id},
+                priority=2,
             )
         )
         return graph
@@ -654,6 +776,11 @@ class PlannerAgent(BaseAgent):
     def _is_spring_boot_goal(self, goal_title: str) -> bool:
         """Return whether a goal asks for a Spring Boot project."""
         return "spring boot" in goal_title.lower()
+
+    def _is_angular_minimal_goal(self, goal_title: str) -> bool:
+        """Return whether a goal asks for a minimal Angular app."""
+        lowered = goal_title.lower()
+        return "angular" in lowered and ("minima" in lowered or "mínima" in lowered)
 
     def _is_spring_boot_crud_user_goal(self, goal_title: str) -> bool:
         """Return whether a goal asks for Spring Boot user CRUD."""

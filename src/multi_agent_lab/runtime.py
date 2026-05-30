@@ -150,6 +150,7 @@ class AgentRuntime:
         terminal_inbox = await bus.subscribe_many(
             (
                 EventType.TEST_EXECUTION_PASSED if self.allow_execution else EventType.TEST_PASSED,
+                EventType.BUILD_PASSED,
                 EventType.WORKFLOW_HALTED,
                 EventType.WORKFLOW_TIMEOUT,
             )
@@ -197,7 +198,11 @@ class AgentRuntime:
                 )
                 await bus.publish(terminal_event)
 
-            if terminal_event.type in {EventType.TEST_PASSED, EventType.TEST_EXECUTION_PASSED}:
+            if terminal_event.type in {
+                EventType.TEST_PASSED,
+                EventType.TEST_EXECUTION_PASSED,
+                EventType.BUILD_PASSED,
+            }:
                 completed = Message(
                     sender="runtime",
                     type=EventType.WORKFLOW_COMPLETED,

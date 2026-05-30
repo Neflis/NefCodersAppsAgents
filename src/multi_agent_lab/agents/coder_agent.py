@@ -216,6 +216,12 @@ class CoderAgent(BaseAgent):
             "spring_boot_user_controller",
             "spring_boot_user_controller_test",
             "spring_boot_user_crud_readme",
+            "angular_package_json",
+            "angular_json",
+            "angular_tsconfig",
+            "angular_main",
+            "angular_app_component",
+            "angular_app_template",
         }
         return target_path in flask_files | cli_files or artifact in stable_artifacts
 
@@ -232,6 +238,8 @@ class CoderAgent(BaseAgent):
             return self._direct_strip_fence_fix(target_path)
         if strategy == FixStrategy.FIX_LOCAL_MODULE_IMPORT:
             return self._direct_local_import_fix(target_path)
+        if self._is_angular_path(target_path):
+            return self._mock_file_content("Fix Angular project", target_path, "")
         if self.ollama_client is None:
             return self._mock_fix_content(target_path, based_on_error, strategy)
         self.context_builder.record_event(message)
@@ -355,6 +363,15 @@ class CoderAgent(BaseAgent):
             return self._direct_local_import_fix(target_path)
         if strategy == FixStrategy.FIX_MAVEN_COMPILATION:
             return self._mock_file_content("Fix Maven project", target_path, "")
+        if target_path in {
+            "package.json",
+            "angular.json",
+            "tsconfig.json",
+            "src/main.ts",
+            "src/app/app.component.ts",
+            "src/app/app.component.html",
+        }:
+            return self._mock_file_content("Fix Angular project", target_path, "")
         if strategy == FixStrategy.ADD_MISSING_DEPENDENCY or target_path == "requirements.txt":
             return "Flask>=3.0\n"
         if target_path == "README.md" or "README" in based_on_error:
@@ -419,6 +436,17 @@ class CoderAgent(BaseAgent):
             lines.append(line.replace("create_app().test_client()", "app.test_client()"))
         return "\n".join(lines).rstrip() + "\n"
 
+    def _is_angular_path(self, target_path: str) -> bool:
+        """Return whether a target path belongs to the Angular baseline."""
+        return target_path in {
+            "package.json",
+            "angular.json",
+            "tsconfig.json",
+            "src/main.ts",
+            "src/app/app.component.ts",
+            "src/app/app.component.html",
+        }
+
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
         if artifact == "spring_boot_crud_pom":
@@ -449,6 +477,18 @@ class CoderAgent(BaseAgent):
             return self._spring_boot_test_content()
         if artifact == "spring_boot_readme":
             return self._spring_boot_readme_content()
+        if artifact == "angular_package_json" or target_path == "package.json":
+            return self._angular_package_json_content()
+        if artifact == "angular_json" or target_path == "angular.json":
+            return self._angular_json_content()
+        if artifact == "angular_tsconfig" or target_path == "tsconfig.json":
+            return self._angular_tsconfig_content()
+        if artifact == "angular_main" or target_path == "src/main.ts":
+            return self._angular_main_content()
+        if artifact == "angular_app_component" or target_path == "src/app/app.component.ts":
+            return self._angular_component_content()
+        if artifact == "angular_app_template" or target_path == "src/app/app.component.html":
+            return self._angular_template_content()
         if artifact == "cli_requirements":
             return "pytest\n"
         if target_path == "requirements.txt":
@@ -683,6 +723,138 @@ class CoderAgent(BaseAgent):
                 "",
             ]
         )
+
+    def _angular_package_json_content(self) -> str:
+        """Return a stable Angular 17 package manifest."""
+        return "\n".join(
+            [
+                "{",
+                '  "scripts": {',
+                '    "build": "ngc -p tsconfig.json"',
+                "  },",
+                '  "dependencies": {',
+                '    "@angular/animations": "^17.3.0",',
+                '    "@angular/common": "^17.3.0",',
+                '    "@angular/compiler": "^17.3.0",',
+                '    "@angular/core": "^17.3.0",',
+                '    "@angular/platform-browser": "^17.3.0",',
+                '    "@angular/router": "^17.3.0",',
+                '    "rxjs": "^7.8.1",',
+                '    "tslib": "^2.6.2",',
+                '    "zone.js": "^0.14.4"',
+                "  },",
+                '  "devDependencies": {',
+                '    "@angular-devkit/build-angular": "^17.3.0",',
+                '    "@angular/cli": "^17.3.0",',
+                '    "@angular/compiler-cli": "^17.3.0",',
+                '    "typescript": "~5.4.5"',
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _angular_json_content(self) -> str:
+        """Return a minimal Angular workspace configuration."""
+        return "\n".join(
+            [
+                "{",
+                '  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",',
+                '  "version": 1,',
+                '  "newProjectRoot": "projects",',
+                '  "projects": {',
+                '    "angular-minimal": {',
+                '      "projectType": "application",',
+                '      "schematics": {},',
+                '      "root": "",',
+                '      "sourceRoot": "src",',
+                '      "prefix": "app",',
+                '      "architect": {',
+                '        "build": {',
+                '          "builder": "@angular-devkit/build-angular:application",',
+                '          "options": {',
+                '            "outputPath": "dist/angular-minimal",',
+                '            "index": false,',
+                '            "browser": "src/main.ts",',
+                '            "tsConfig": "tsconfig.json",',
+                '            "assets": [],',
+                '            "styles": []',
+                "          }",
+                "        }",
+                "      }",
+                "    }",
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _angular_tsconfig_content(self) -> str:
+        """Return TypeScript config for a minimal Angular app."""
+        return "\n".join(
+            [
+                "{",
+                '  "compileOnSave": false,',
+                '  "compilerOptions": {',
+                '    "outDir": "./dist/out-tsc",',
+                '    "strict": true,',
+                '    "noImplicitOverride": true,',
+                '    "noPropertyAccessFromIndexSignature": true,',
+                '    "noImplicitReturns": true,',
+                '    "noFallthroughCasesInSwitch": true,',
+                '    "skipLibCheck": true,',
+                '    "esModuleInterop": true,',
+                '    "sourceMap": true,',
+                '    "declaration": false,',
+                '    "experimentalDecorators": true,',
+                '    "moduleResolution": "bundler",',
+                '    "importHelpers": true,',
+                '    "target": "ES2022",',
+                '    "module": "ES2022",',
+                '    "lib": ["ES2022", "dom"]',
+                "  },",
+                '  "angularCompilerOptions": {',
+                '    "enableI18nLegacyMessageIdFormat": false,',
+                '    "strictInjectionParameters": true,',
+                '    "strictInputAccessModifiers": true,',
+                '    "strictTemplates": true',
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _angular_main_content(self) -> str:
+        """Return standalone Angular bootstrap entrypoint."""
+        return "\n".join(
+            [
+                "import { bootstrapApplication } from '@angular/platform-browser';",
+                "import { AppComponent } from './app/app.component';",
+                "",
+                "bootstrapApplication(AppComponent).catch((error) => console.error(error));",
+                "",
+            ]
+        )
+
+    def _angular_component_content(self) -> str:
+        """Return the single standalone Angular component."""
+        return "\n".join(
+            [
+                "import { Component } from '@angular/core';",
+                "",
+                "@Component({",
+                "  selector: 'app-root',",
+                "  standalone: true,",
+                "  templateUrl: './app.component.html',",
+                "})",
+                "export class AppComponent {}",
+                "",
+            ]
+        )
+
+    def _angular_template_content(self) -> str:
+        """Return the minimal Angular component template."""
+        return "<h1>Angular Works</h1>\n"
 
     def _spring_boot_pom_content(self, description: str = "Minimal Spring Boot health API") -> str:
         """Return a stable Spring Boot 3 Maven pom."""

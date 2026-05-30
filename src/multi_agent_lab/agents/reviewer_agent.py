@@ -138,6 +138,8 @@ class ReviewerAgent(BaseAgent):
 
     def _project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a generated multi-file project."""
+        if "angular.json" in files:
+            return self._angular_feedback(files)
         if "src/main/java/com/example/demo/user/UserController.java" in files:
             return self._spring_boot_user_crud_feedback(files)
         if "pom.xml" in files:
@@ -145,6 +147,31 @@ class ReviewerAgent(BaseAgent):
         if "task_cli.py" in files:
             return self._python_cli_feedback(files)
         return self._flask_project_feedback(files)
+
+    def _angular_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a minimal Angular standalone app."""
+        feedback: list[str] = []
+        package_json = files.get("package.json", "")
+        angular_json = files.get("angular.json", "")
+        tsconfig = files.get("tsconfig.json", "")
+        main = files.get("src/main.ts", "")
+        component = files.get("src/app/app.component.ts", "")
+        template = files.get("src/app/app.component.html", "")
+        if "@angular/core" not in package_json or "@angular/compiler-cli" not in package_json:
+            feedback.append("package.json debe incluir dependencias Angular 17+.")
+        if '"build"' not in package_json:
+            feedback.append("package.json debe definir script build.")
+        if "angular-minimal" not in angular_json:
+            feedback.append("angular.json debe definir el proyecto Angular.")
+        if "angularCompilerOptions" not in tsconfig:
+            feedback.append("tsconfig.json debe configurar Angular compiler options.")
+        if "bootstrapApplication(AppComponent)" not in main:
+            feedback.append("src/main.ts debe arrancar AppComponent standalone.")
+        if "standalone: true" not in component:
+            feedback.append("app.component.ts debe declarar un componente standalone.")
+        if "Angular Works" not in template:
+            feedback.append("app.component.html debe mostrar Angular Works.")
+        return feedback
 
     def _spring_boot_user_crud_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a Spring Boot user CRUD project."""

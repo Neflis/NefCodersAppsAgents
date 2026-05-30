@@ -42,7 +42,7 @@ class CommandExecutionResult:
 class CommandTool:
     """Run a strict whitelist of commands inside the workspace."""
 
-    allowed_commands = {"python", "pytest", "pip", "mvn"}
+    allowed_commands = {"python", "pytest", "pip", "mvn", "npm"}
     blocked_tokens = {
         "cmd",
         "powershell",
@@ -53,7 +53,6 @@ class CommandTool:
         "rm",
         "del",
         "git",
-        "npm",
         "docker",
         "&",
         "|",
@@ -158,6 +157,9 @@ class CommandTool:
         if command_id == "mvn":
             self._validate_mvn_args(args)
             return
+        if command_id == "npm":
+            self._validate_npm_args(args)
+            return
         if command_id == "python" and len(args) != 1:
             raise CommandToolError("python requires exactly one workspace .py path.")
         for arg in args:
@@ -199,6 +201,12 @@ class CommandTool:
         if args != ["test"]:
             raise CommandToolError("Only 'mvn test' is allowed.")
 
+    def _validate_npm_args(self, args: list[str]) -> None:
+        """Allow only npm install and npm run build."""
+        if args in (["install"], ["run", "build"]):
+            return
+        raise CommandToolError("Only 'npm install' and 'npm run build' are allowed.")
+
     def _command_vector(self, command_id: str, args: list[str]) -> list[str]:
         if command_id == "python":
             return ["python", *args]
@@ -208,11 +216,17 @@ class CommandTool:
             return ["python", "-m", "pip", *args]
         if command_id == "mvn":
             return [self._mvn_executable(), *args]
+        if command_id == "npm":
+            return [self._npm_executable(), *args]
         raise CommandToolError(f"Command is not whitelisted: {command_id}")
 
     def _mvn_executable(self) -> str:
         """Resolve Maven executable without relying on shell command lookup."""
         return shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
+
+    def _npm_executable(self) -> str:
+        """Resolve npm executable without relying on shell command lookup."""
+        return shutil.which("npm.cmd") or shutil.which("npm") or "npm"
 
     def _execution_env(self) -> dict[str, str]:
         """Return an execution environment that can import local workspace modules."""

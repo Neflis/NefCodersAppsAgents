@@ -51,6 +51,9 @@ class TesterExecutionAgent(BaseAgent):
         if command_id == "pytest" and self._workspace_has_pom():
             command_id = "mvn"
             args = ["test"]
+        if command_id == "pytest" and self._workspace_has_package_json():
+            command_id = "npm"
+            args = ["install"]
         await self.publish(
             EventType.TEST_EXECUTION_REQUESTED,
             {
@@ -66,6 +69,12 @@ class TesterExecutionAgent(BaseAgent):
         command_id = str(message.content.get("command_id", "pytest"))
         args = list(message.content.get("args", []))
         logger.info("Ejecutando validacion command=%s args=%s", command_id, args)
+        if command_id == "npm" and args == ["run", "build"]:
+            await self.publish(
+                EventType.BUILD_STARTED,
+                {"task_id": task_id, "command_id": command_id, "args": args},
+                source=message,
+            )
         await self.publish(
             EventType.TEST_EXECUTION_STARTED,
             {"task_id": task_id, "command_id": command_id, "args": args},
@@ -93,6 +102,25 @@ class TesterExecutionAgent(BaseAgent):
             return
 
         payload = self._execution_payload(task_id, command_id, args, result.to_dict())
+        if command_id == "npm" and args == ["install"] and result.success:
+            await self.publish(
+                EventType.TASK_COMPLETED,
+                {"task_id": task_id, "result": payload, "owner": self.name},
+                source=message,
+            )
+            return
+
+        if command_id == "npm" and args == ["run", "build"]:
+            if result.success:
+                await self.publish(EventType.BUILD_PASSED, payload, source=message)
+                await self.publish(
+                    EventType.TASK_COMPLETED,
+                    {"task_id": task_id, "result": payload, "owner": self.name},
+                    source=message,
+                )
+                return
+            await self.publish(EventType.BUILD_FAILED, payload, source=message)
+
         if result.success:
             await self.publish(EventType.TEST_EXECUTION_PASSED, payload, source=message)
             await self.publish(
@@ -111,6 +139,8 @@ class TesterExecutionAgent(BaseAgent):
             return self.command_tool.run_pytest(normalized_args)
         if command_id == "mvn":
             return self.command_tool.run_command("mvn", normalized_args or ["test"])
+        if command_id == "npm":
+            return self.command_tool.run_command("npm", normalized_args)
         return self.command_tool.run_command(command_id, normalized_args)
 
     def _workspace_has_pom(self) -> bool:
@@ -122,6 +152,17 @@ class TesterExecutionAgent(BaseAgent):
             return workspace.resolve_safe_path("pom.xml").exists()
         except Exception as error:  # noqa: BLE001
             logger.warning("No se pudo comprobar pom.xml: %s", error)
+            return False
+
+    def _workspace_has_package_json(self) -> bool:
+        """Return whether the execution workspace contains an npm project."""
+        workspace = getattr(self.command_tool, "workspace", None)
+        if workspace is None:
+            return False
+        try:
+            return workspace.resolve_safe_path("package.json").exists()
+        except Exception as error:  # noqa: BLE001
+            logger.warning("No se pudo comprobar package.json: %s", error)
             return False
 
     async def _publish_failed(
@@ -195,6 +236,12 @@ class TesterExecutionAgent(BaseAgent):
             "src/main/java/com/example/demo/user/UserController.java",
             "src/main/java/com/example/demo/user/UserService.java",
             "src/test/java/com/example/demo/user/UserControllerTest.java",
+            "package.json",
+            "angular.json",
+            "tsconfig.json",
+            "src/main.ts",
+            "src/app/app.component.ts",
+            "src/app/app.component.html",
         ):
             if path in combined:
                 candidates.append(path)
@@ -213,6 +260,15 @@ class TesterExecutionAgent(BaseAgent):
                 "src/main/java/com/example/demo/user/UserController.java",
                 "src/main/java/com/example/demo/user/UserService.java",
                 "src/test/java/com/example/demo/user/UserControllerTest.java",
+            ]
+        if "npm" in combined.lower() or "angular" in combined.lower():
+            return [
+                "package.json",
+                "angular.json",
+                "tsconfig.json",
+                "src/main.ts",
+                "src/app/app.component.ts",
+                "src/app/app.component.html",
             ]
         if "No module named 'app'" in combined or 'No module named "app"' in combined:
             return ["tests/test_app.py", "app.py"]

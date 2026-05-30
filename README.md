@@ -178,6 +178,25 @@ README.md
 
 Esta vertical usa almacenamiento en memoria con `Map<Long, User>` y expone `GET /users`, `GET /users/{id}`, `POST /users` y `DELETE /users/{id}`. No usa base de datos, JPA ni Lombok. Con `--allow-execution`, tambien se valida mediante `mvn test`.
 
+Ejecutar el baseline Angular minimo:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una aplicación Angular mínima" --mock
+```
+
+Resultado esperado en `workspace/`:
+
+```text
+package.json
+angular.json
+tsconfig.json
+src/main.ts
+src/app/app.component.ts
+src/app/app.component.html
+```
+
+Esta vertical usa Angular standalone 17+, un unico componente y muestra `Angular Works`. Con `--allow-execution`, el runtime ejecuta `npm install` y despues `npm run build` mediante whitelist estricta.
+
 Ejecutar un objetivo con Ollama real:
 
 ```powershell
@@ -253,6 +272,8 @@ python app.py
 pytest
 pip check
 mvn test
+npm install
+npm run build
 ```
 
 Comandos bloqueados:
@@ -266,6 +287,8 @@ La ejecucion se comunica por eventos: `TEST_EXECUTION_REQUESTED`, `TEST_EXECUTIO
 `pytest` se ejecuta con `cwd=workspace` y `PYTHONPATH` apuntando al workspace para que proyectos Python simples puedan importar modulos locales como `app.py` desde `tests/test_app.py`.
 
 Para proyectos Maven, solo se permite `mvn test`. Otros goals como `mvn clean install`, `mvn package` o cualquier combinacion adicional quedan bloqueados por `CommandTool`.
+
+Para proyectos npm, solo se permite `npm install` y `npm run build`. Otros comandos como `npm test`, `npm start`, `npm run dev` o scripts arbitrarios quedan bloqueados.
 
 ## Auto-fix tras fallos
 
@@ -321,6 +344,8 @@ Estrategias actuales:
 Para proyectos Spring Boot minimos, el baseline determinista crea un `pom.xml` Spring Boot 3 con Java 17, `DemoApplication`, `HealthController` con `GET /health` y un test `MockMvc` que valida estado 200 y body `OK`.
 
 Para objetivos que contienen `Spring Boot`, `CRUD` y `usuarios`, el baseline crea una API CRUD in-memory con `User`, `UserService`, `UserController` y `UserControllerTest`. El servicio usa `Map<Long, User>`, el controller expone los endpoints `/users` y los tests validan listar, crear, obtener y eliminar usuarios con MockMvc.
+
+Para objetivos Angular minimos, el baseline crea una aplicacion standalone con `package.json`, `angular.json`, `tsconfig.json`, `src/main.ts`, `AppComponent` y template HTML. La validacion controlada publica `BUILD_STARTED`, `BUILD_PASSED` o `BUILD_FAILED` alrededor de `npm run build`.
 
 `FailureAnalysisService` reconoce errores Maven basicos como fallos de compilacion, tests fallidos, dependencias ausentes, version Java incorrecta y paquetes o clases no encontrados.
 

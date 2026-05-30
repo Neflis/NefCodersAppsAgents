@@ -68,6 +68,16 @@ def test_file_tool_allows_spring_boot_file_types(tmp_path: Path) -> None:
     assert tool.exists("src/main/java/com/example/demo/DemoApplication.java")
 
 
+def test_file_tool_allows_angular_file_types(tmp_path: Path) -> None:
+    tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
+
+    tool.write_file("src/main.ts", "export {};\n")
+    tool.write_file("src/app/app.component.html", "<h1>Angular Works</h1>\n")
+
+    assert tool.exists("src/main.ts")
+    assert tool.exists("src/app/app.component.html")
+
+
 def test_file_tool_blocks_disallowed_extension(tmp_path: Path) -> None:
     tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
 
