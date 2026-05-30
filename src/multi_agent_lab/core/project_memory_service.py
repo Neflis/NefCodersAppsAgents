@@ -23,6 +23,8 @@ class ProjectMemoryService:
         EventType.TEST_EXECUTION_FAILED,
         EventType.FIX_PROPOSED,
         EventType.FIX_APPLIED,
+        EventType.PATCH_APPLIED,
+        EventType.PATCH_FAILED,
     }
 
     def __init__(self, store: SQLiteStore | None = None) -> None:
@@ -123,6 +125,19 @@ class ProjectMemoryService:
             path = content.get("path")
             if isinstance(path, str):
                 memory.add_unique("fixes_applied", path)
+
+        if event_type == EventType.PATCH_APPLIED:
+            path = content.get("path")
+            diff_summary = content.get("diff_summary", "")
+            if isinstance(path, str):
+                memory.add_unique("fixes_applied", f"patch:{path}")
+            if isinstance(diff_summary, str):
+                memory.add_unique("architecture_decisions", f"Patch applied: {diff_summary}")
+
+        if event_type == EventType.PATCH_FAILED:
+            error = content.get("error", "Patch failed.")
+            self.add_error(correlation_id, str(error))
+            memory = self.get_memory(correlation_id)
 
         memory.touch()
         self._persist(memory)

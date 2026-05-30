@@ -14,6 +14,7 @@ from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.tools.file_tool import FileTool, FileToolError
+from multi_agent_lab.tools.patch_tool import PatchTool, PatchToolError
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,12 @@ logger = logging.getLogger(__name__)
 class FileAgent(BaseAgent):
     """Agent that claims file write tasks and uses FileTool."""
 
-    subscribed_events = (EventType.TASK_READY, EventType.CODE_PROPOSED, EventType.FIX_PROPOSED)
+    subscribed_events = (
+        EventType.TASK_READY,
+        EventType.CODE_PROPOSED,
+        EventType.FIX_PROPOSED,
+        EventType.PATCH_PROPOSED,
+    )
     capabilities = (Capability.FILE_WRITE.value,)
 
     def __init__(
@@ -33,12 +39,14 @@ class FileAgent(BaseAgent):
         event_logger: AgentEventLogger | None = None,
         content_sanitizer: CodeContentSanitizer | None = None,
         fix_target_guard: FixTargetGuard | None = None,
+        patch_tool: PatchTool | None = None,
     ) -> None:
         super().__init__(name, bus, event_logger)
         self.file_tool = file_tool
         self.graph_store = graph_store
         self.content_sanitizer = content_sanitizer or CodeContentSanitizer()
         self.fix_target_guard = fix_target_guard or FixTargetGuard()
+        self.patch_tool = patch_tool or PatchTool(file_tool.workspace)
 
     async def handle_message(self, message: Message) -> None:
         """Claim compatible file tasks and write approved content."""
@@ -47,6 +55,9 @@ class FileAgent(BaseAgent):
             return
         if message.type == EventType.FIX_PROPOSED:
             await self._apply_fix(message)
+            return
+        if message.type == EventType.PATCH_PROPOSED:
+            await self._apply_patch(message)
             return
         if not self.can_claim(message):
             return
@@ -196,3 +207,50 @@ class FileAgent(BaseAgent):
                 },
                 source=message,
             )
+
+    async def _apply_patch(self, message: Message) -> None:
+        """Apply a proposed search/replace patch through PatchTool."""
+        path = str(message.content["path"])
+        search = str(message.content.get("search", ""))
+        replace = str(message.content.get("replace", ""))
+        logger.info("Aplicando patch path=%s", path)
+        try:
+            result = self.patch_tool.apply_search_replace(path, search, replace)
+        except (PatchToolError, ValueError) as error:
+            await self.publish(
+                EventType.PATCH_FAILED,
+                {
+                    "task_id": message.content.get("task_id"),
+                    "path": path,
+                    "error": str(error),
+                    "execution_task_id": message.content.get("execution_task_id"),
+                    "command_id": message.content.get("command_id", "pytest"),
+                    "args": list(message.content.get("args", [])),
+                    "failure_context": message.content.get("failure_context", {}),
+                },
+                source=message,
+            )
+            if message.content.get("task_id") is not None:
+                await self.publish(
+                    EventType.TASK_FAILED,
+                    {"task_id": message.content["task_id"], "error": str(error)},
+                    source=message,
+                )
+            return
+
+        await self.publish(
+            EventType.PATCH_APPLIED,
+            {
+                "task_id": message.content.get("task_id"),
+                "path": result.path,
+                "diff_summary": result.diff_summary,
+                "diff": result.diff,
+                "reason": message.content.get("reason", ""),
+                "fix_strategy": message.content.get("fix_strategy", ""),
+                "failure_context": message.content.get("failure_context", {}),
+                "execution_task_id": message.content.get("execution_task_id"),
+                "command_id": message.content.get("command_id", "pytest"),
+                "args": list(message.content.get("args", [])),
+            },
+            source=message,
+        )

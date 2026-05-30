@@ -248,7 +248,7 @@ La capa de seguridad esta separada en dos piezas:
 
 Limites actuales:
 
-- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.xml`, `.java`.
+- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.xml`, `.java`, `.ts`, `.html`.
 - Tamano maximo por archivo: 1 MB.
 - No hay borrado de archivos.
 - No hay ejecucion de comandos salvo que uses `--allow-execution`.
@@ -338,6 +338,21 @@ Estrategias actuales:
 - `fix_maven_compilation`
 
 `CoderAgent` usa ese contexto para leer archivos relacionados y publicar `FIX_PROPOSED` con `fix_strategy`, `fix_reasoning`, `diff_summary`, `based_on_error` y un hash simple del contenido. `ProjectMemory` guarda errores, fixes aplicados y hashes de fixes para evitar repetir exactamente el mismo cambio.
+
+## Patch Engine
+
+`PatchTool` permite modificar archivos existentes con parches `search/replace` seguros dentro del workspace. No crea archivos nuevos: para archivos nuevos se mantiene `CODE_PROPOSED` y escritura mediante `FileTool`.
+
+Reglas del motor:
+
+- la ruta debe resolverse dentro de `./workspace/`;
+- el archivo debe existir y ser textual;
+- `search` debe aparecer exactamente una vez;
+- si `search` no aparece o aparece varias veces, se publica `PATCH_FAILED`;
+- antes de aplicar se conserva un backup interno;
+- cada patch aplicado publica `PATCH_APPLIED` con `diff_summary`.
+
+`FileAgent` escucha `PATCH_PROPOSED` y aplica el cambio con `PatchTool`. `ProjectMemory` guarda los patches aplicados y sus resumenes, y `RuntimeSummary` expone `patches_applied` y `patches_failed`.
 
 `fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`. Para modulos locales como `app`, `todo` o `models`, el target del fix son archivos Python (`tests/test_app.py`, `app.py`), no `requirements.txt`. Si se intenta aplicar un fix local a `requirements.txt`, `FileAgent` lo rechaza como `wrong_target_fix`.
 

@@ -6,10 +6,22 @@ from multi_agent_lab.tools.file_tool import (
     FileToolError,
     UnsupportedFileTypeError,
 )
+from multi_agent_lab.tools.patch_tool import (
+    PatchApplyResult,
+    PatchPreview,
+    PatchTool,
+    PatchToolError,
+    PatchValidationError,
+)
 
 __all__ = [
     "FileTooLargeError",
     "FileTool",
     "FileToolError",
+    "PatchApplyResult",
+    "PatchPreview",
+    "PatchTool",
+    "PatchToolError",
+    "PatchValidationError",
     "UnsupportedFileTypeError",
 ]

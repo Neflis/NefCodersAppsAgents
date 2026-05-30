@@ -49,15 +49,18 @@ class CoderAgent(BaseAgent):
             return
         await self.claim_task(message)
 
-        target_path = str(message.content.get("payload", {}).get("path", "README.md"))
-        artifact = str(message.content.get("payload", {}).get("artifact", "readme"))
+        payload = dict(message.content.get("payload", {}))
+        target_path = str(payload.get("path", "README.md"))
+        artifact = str(payload.get("artifact", "readme"))
         title = str(message.content.get("title", "Crear borrador README"))
+        if self._is_patch_task(payload):
+            await self._propose_patch(message, payload, target_path)
+            return
         logger.info(
             "Generando borrador task_id=%s path=%s",
             message.content["task_id"],
             target_path,
         )
-
         if self._uses_stable_baseline(target_path, artifact):
             proposed_content = self._mock_file_content(title, target_path, artifact)
         else:
@@ -75,6 +78,37 @@ class CoderAgent(BaseAgent):
                 {"task_id": message.content["task_id"], **result},
                 source=message,
             )
+        await self.publish(
+            EventType.TASK_COMPLETED,
+            {"task_id": message.content["task_id"], "result": result, "owner": self.name},
+            source=message,
+        )
+
+    def _is_patch_task(self, payload: dict[str, object]) -> bool:
+        """Return whether a coding task already contains a patch instruction."""
+        return payload.get("action") == "patch_file" or (
+            "search" in payload and "replace" in payload and "path" in payload
+        )
+
+    async def _propose_patch(
+        self,
+        message: Message,
+        payload: dict[str, object],
+        target_path: str,
+    ) -> None:
+        """Publish a safe patch proposal for an existing file task."""
+        result = {
+            "path": target_path,
+            "search": str(payload.get("search", "")),
+            "replace": str(payload.get("replace", "")),
+            "reason": str(payload.get("reason", "Apply requested search/replace patch.")),
+            "diff_summary": str(payload.get("diff_summary", "")),
+        }
+        await self.publish(
+            EventType.PATCH_PROPOSED,
+            {"task_id": message.content["task_id"], **result},
+            source=message,
+        )
         await self.publish(
             EventType.TASK_COMPLETED,
             {"task_id": message.content["task_id"], "result": result, "owner": self.name},

@@ -20,6 +20,7 @@ class TesterExecutionAgent(BaseAgent):
         EventType.TEST_EXECUTION_REQUESTED,
         EventType.RETEST_REQUESTED,
         EventType.FIX_APPLIED,
+        EventType.PATCH_APPLIED,
     )
     capabilities = (Capability.TESTING_EXECUTION.value,)
 
@@ -38,7 +39,7 @@ class TesterExecutionAgent(BaseAgent):
         if message.type == EventType.RETEST_REQUESTED:
             await self._execute(message)
             return
-        if message.type == EventType.FIX_APPLIED:
+        if message.type in {EventType.FIX_APPLIED, EventType.PATCH_APPLIED}:
             await self._request_retest(message)
 
     async def _request_execution(self, message: Message) -> None:
@@ -183,7 +184,7 @@ class TesterExecutionAgent(BaseAgent):
 
     async def _request_retest(self, message: Message) -> None:
         if (
-            message.type == EventType.FIX_APPLIED
+            message.type in {EventType.FIX_APPLIED, EventType.PATCH_APPLIED}
             and message.content.get("path") == "requirements.txt"
         ):
             return

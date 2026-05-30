@@ -71,6 +71,8 @@ class RuntimeSummary:
     wrong_target_fix_count: int = 0
     installed_dependencies: int = 0
     dependency_install_failures: int = 0
+    patches_applied: int = 0
+    patches_failed: int = 0
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -411,6 +413,8 @@ class AgentRuntime:
                 noise_reducer,
                 EventType.DEPENDENCY_INSTALL_FAILED,
             ),
+            patches_applied=self._event_count(noise_reducer, EventType.PATCH_APPLIED),
+            patches_failed=self._event_count(noise_reducer, EventType.PATCH_FAILED),
             details=dict(terminal_event.content or {}),
         )
 
@@ -465,7 +469,9 @@ class AgentRuntime:
         if not isinstance(counts, dict):
             return False
         requested = int(counts.get(str(EventType.FIX_REQUESTED), 0))
-        applied = int(counts.get(str(EventType.FIX_APPLIED), 0))
+        applied = int(counts.get(str(EventType.FIX_APPLIED), 0)) + int(
+            counts.get(str(EventType.PATCH_APPLIED), 0)
+        )
         retests = int(counts.get(str(EventType.RETEST_REQUESTED), 0))
         passed = int(counts.get(str(EventType.TEST_EXECUTION_PASSED), 0))
         halted = int(counts.get(str(EventType.WORKFLOW_HALTED), 0))

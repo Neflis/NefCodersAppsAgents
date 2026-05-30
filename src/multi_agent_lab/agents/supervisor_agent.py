@@ -24,6 +24,7 @@ class SupervisorAgent(BaseAgent):
         EventType.TEST_EXECUTION_FAILED,
         EventType.TASK_FAILED,
         EventType.TASK_RETRIED,
+        EventType.PATCH_FAILED,
     }
 
     def __init__(
@@ -93,5 +94,7 @@ class SupervisorAgent(BaseAgent):
             EventType.FIX_REQUESTED,
             EventType.FIX_PROPOSED,
             EventType.FIX_APPLIED,
+            EventType.PATCH_PROPOSED,
+            EventType.PATCH_APPLIED,
             EventType.RETEST_REQUESTED,
         }
