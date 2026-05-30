@@ -58,12 +58,15 @@ class CoderAgent(BaseAgent):
             target_path,
         )
 
-        decision = await self._decide(message, title, target_path)
-        proposed_content = (
-            str(decision.content)
-            if decision is not None and isinstance(decision.content, str)
-            else self._mock_file_content(title, target_path, artifact)
-        )
+        if self._uses_stable_flask_baseline(target_path, artifact):
+            proposed_content = self._mock_file_content(title, target_path, artifact)
+        else:
+            decision = await self._decide(message, title, target_path)
+            proposed_content = (
+                str(decision.content)
+                if decision is not None and isinstance(decision.content, str)
+                else self._mock_file_content(title, target_path, artifact)
+            )
 
         result = {"path": target_path, "content": proposed_content}
         if artifact != "design":
@@ -189,6 +192,14 @@ class CoderAgent(BaseAgent):
         if target_path == "requirements.txt":
             return ["app.py"]
         return []
+
+    def _uses_stable_flask_baseline(self, target_path: str, artifact: str) -> bool:
+        """Return whether a Flask TODO demo file must be deterministic."""
+        return target_path in {"app.py", "requirements.txt", "tests/test_app.py"} or artifact in {
+            "flask_app",
+            "requirements",
+            "pytest_tests",
+        }
 
     async def _fix_content(
         self,
@@ -389,7 +400,7 @@ class CoderAgent(BaseAgent):
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
         if target_path == "requirements.txt":
-            return "Flask>=3.0\n"
+            return "Flask\npytest\n"
         if target_path == "app.py":
             return "\n".join(
                 [
@@ -402,6 +413,14 @@ class CoderAgent(BaseAgent):
                     "@app.get('/todos')",
                     "def list_todos():",
                     "    return jsonify(todos)",
+                    "",
+                    "",
+                    "@app.get('/todos/<int:todo_id>')",
+                    "def get_todo(todo_id):",
+                    "    for todo in todos:",
+                    "        if todo['id'] == todo_id:",
+                    "            return jsonify(todo)",
+                    "    return jsonify({'error': 'not found'}), 404",
                     "",
                     "",
                     "@app.post('/todos')",
@@ -442,10 +461,26 @@ class CoderAgent(BaseAgent):
                     "from app import app",
                     "",
                     "",
-                    "def test_todos_endpoint_is_available():",
+                    "def test_todos_crud_flow():",
                     "    client = app.test_client()",
-                    "    response = client.get('/todos')",
-                    "    assert response.status_code in (200, 404)",
+                    "",
+                    "    list_response = client.get('/todos')",
+                    "    assert list_response.status_code == 200",
+                    "    assert list_response.get_json() == []",
+                    "",
+                    "    create_response = client.post('/todos', json={'title': 'Comprar pan'})",
+                    "    assert create_response.status_code == 201",
+                    "    created = create_response.get_json()",
+                    "    assert created == {'id': 1, 'title': 'Comprar pan'}",
+                    "",
+                    "    get_response = client.get('/todos/1')",
+                    "    assert get_response.status_code == 200",
+                    "    assert get_response.get_json() == created",
+                    "",
+                    "    delete_response = client.delete('/todos/1')",
+                    "    assert delete_response.status_code == 200",
+                    "    assert delete_response.get_json() == created",
+                    "    assert client.get('/todos').get_json() == []",
                     "",
                 ]
             )
@@ -459,8 +494,10 @@ class CoderAgent(BaseAgent):
                 "",
                 "## Archivos",
                 "",
-                "- `app.py`: API con endpoints `GET /todos` y `POST /todos`.",
-                "- `requirements.txt`: dependencia Flask.",
+                "- `app.py`: API con endpoints `GET /todos`, `POST /todos`, "
+                "`GET /todos/<id>` y `DELETE /todos/<id>`.",
+                "- `requirements.txt`: dependencias Flask y pytest.",
+                "- `tests/test_app.py`: tests pytest con `from app import app`.",
                 "",
                 "## Uso",
                 "",

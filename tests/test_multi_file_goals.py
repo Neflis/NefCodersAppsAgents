@@ -44,6 +44,60 @@ async def test_flask_files_are_coherent(tmp_path: Path) -> None:
     assert "/todos" in readme
 
 
+async def test_flask_todo_mock_generates_stable_baseline(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Crea una pequena API Flask TODO con tests basicos",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    app = (workspace / "app.py").read_text(encoding="utf-8")
+    requirements = (workspace / "requirements.txt").read_text(encoding="utf-8")
+    tests = (workspace / "tests" / "test_app.py").read_text(encoding="utf-8")
+    assert summary.status == "completed"
+    assert sorted(summary.files_created) == [
+        "README.md",
+        "app.py",
+        "requirements.txt",
+        "tests/test_app.py",
+    ]
+    assert "app = Flask(__name__)" in app
+    assert "todos = []" in app
+    assert "@app.get('/todos')" in app
+    assert "@app.post('/todos')" in app
+    assert "@app.get('/todos/<int:todo_id>')" in app
+    assert "@app.delete('/todos/<int:todo_id>')" in app
+    assert requirements == "Flask\npytest\n"
+    assert "from app import app" in tests
+    assert "client = app.test_client()" in tests
+    assert "db" not in tests
+    assert "Todo" not in tests
+    assert "create_app" not in tests
+
+
+async def test_flask_todo_baseline_pytest_passes_with_execution(tmp_path: Path) -> None:
+    runtime = AgentRuntime(
+        "Crea una pequena API Flask TODO con tests basicos",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert summary.execution_success_count == 1
+    assert summary.execution_failure_count == 0
+
+
 def test_reviewer_detects_flask_import_without_requirement() -> None:
     reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
 
