@@ -138,20 +138,76 @@ class ReviewerAgent(BaseAgent):
 
     def _project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a generated multi-file project."""
+        if "src/main/java/com/example/demo/user/UserController.java" in files:
+            return self._spring_boot_user_crud_feedback(files)
         if "pom.xml" in files:
             return self._spring_boot_feedback(files)
         if "task_cli.py" in files:
             return self._python_cli_feedback(files)
         return self._flask_project_feedback(files)
 
+    def _spring_boot_user_crud_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a Spring Boot user CRUD project."""
+        feedback = self._spring_boot_common_feedback(files)
+        user = files.get("src/main/java/com/example/demo/user/User.java", "")
+        service = files.get("src/main/java/com/example/demo/user/UserService.java", "")
+        controller = files.get("src/main/java/com/example/demo/user/UserController.java", "")
+        tests = files.get("src/test/java/com/example/demo/user/UserControllerTest.java", "")
+        readme = files.get("README.md", "")
+        if "record User" not in user and "class User" not in user:
+            feedback.append("User.java debe definir el modelo User.")
+        if "Map<Long, User>" not in service:
+            feedback.append("UserService.java debe usar Map<Long, User> en memoria.")
+        for token in ("findAll", "findById", "create", "delete"):
+            if token not in service:
+                feedback.append(f"UserService.java debe implementar {token}.")
+        for route in (
+            '@RequestMapping("/users")',
+            "@GetMapping",
+            '@GetMapping("/{id}")',
+            "@PostMapping",
+            '@DeleteMapping("/{id}")',
+        ):
+            if route not in controller:
+                feedback.append(f"UserController.java debe exponer {route}.")
+        for expectation in (
+            'get("/users")',
+            'post("/users")',
+            'get("/users/1")',
+            'delete("/users/1")',
+            "status().isNoContent()",
+        ):
+            if expectation not in tests:
+                feedback.append("UserControllerTest.java debe probar el CRUD con MockMvc.")
+                break
+        if "crud" not in readme.lower() or "/users" not in readme:
+            feedback.append("README.md debe documentar la API CRUD de usuarios.")
+        return feedback
+
     def _spring_boot_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a minimal Spring Boot project."""
-        feedback: list[str] = []
-        pom = files.get("pom.xml", "")
+        feedback = self._spring_boot_common_feedback(files)
         application = files.get("src/main/java/com/example/demo/DemoApplication.java", "")
         controller = files.get("src/main/java/com/example/demo/HealthController.java", "")
         tests = files.get("src/test/java/com/example/demo/HealthControllerTest.java", "")
         readme = files.get("README.md", "")
+        if "@SpringBootApplication" not in application:
+            feedback.append("DemoApplication.java debe definir la aplicacion Spring Boot.")
+        if '@GetMapping("/health")' not in controller or 'return "OK";' not in controller:
+            feedback.append("HealthController.java debe exponer GET /health con respuesta OK.")
+        if "MockMvc" not in tests:
+            feedback.append("HealthControllerTest.java debe usar MockMvc.")
+        if "status().isOk()" not in tests or 'content().string("OK")' not in tests:
+            feedback.append("HealthControllerTest.java debe validar 200 y body OK.")
+        if "spring boot" not in readme.lower() or "/health" not in readme:
+            feedback.append("README.md debe documentar Spring Boot y GET /health.")
+        return feedback
+
+    def _spring_boot_common_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return common feedback for Spring Boot Maven projects."""
+        feedback: list[str] = []
+        pom = files.get("pom.xml", "")
+        application = files.get("src/main/java/com/example/demo/DemoApplication.java", "")
         if "spring-boot-starter-parent" not in pom:
             feedback.append("pom.xml debe usar Spring Boot 3.")
         if "<java.version>17</java.version>" not in pom:
@@ -165,14 +221,6 @@ class ReviewerAgent(BaseAgent):
             feedback.append("pom.xml no debe incluir DB, JPA ni Lombok.")
         if "@SpringBootApplication" not in application:
             feedback.append("DemoApplication.java debe definir la aplicacion Spring Boot.")
-        if '@GetMapping("/health")' not in controller or 'return "OK";' not in controller:
-            feedback.append("HealthController.java debe exponer GET /health con respuesta OK.")
-        if "MockMvc" not in tests:
-            feedback.append("HealthControllerTest.java debe usar MockMvc.")
-        if "status().isOk()" not in tests or 'content().string("OK")' not in tests:
-            feedback.append("HealthControllerTest.java debe validar 200 y body OK.")
-        if "spring boot" not in readme.lower() or "/health" not in readme:
-            feedback.append("README.md debe documentar Spring Boot y GET /health.")
         return feedback
 
     def _flask_project_feedback(self, files: dict[str, str]) -> list[str]:

@@ -158,6 +158,26 @@ README.md
 
 Si usas `--allow-execution` y el workspace contiene `pom.xml`, `TesterExecutionAgent` ejecuta `mvn test` mediante la whitelist estricta. La ejecucion real requiere Maven y Java 17 instalados en la maquina.
 
+Ejecutar el baseline Spring Boot CRUD de usuarios:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una API Spring Boot CRUD de usuarios con tests basicos" --mock
+```
+
+Resultado esperado en `workspace/`:
+
+```text
+pom.xml
+src/main/java/com/example/demo/DemoApplication.java
+src/main/java/com/example/demo/user/User.java
+src/main/java/com/example/demo/user/UserController.java
+src/main/java/com/example/demo/user/UserService.java
+src/test/java/com/example/demo/user/UserControllerTest.java
+README.md
+```
+
+Esta vertical usa almacenamiento en memoria con `Map<Long, User>` y expone `GET /users`, `GET /users/{id}`, `POST /users` y `DELETE /users/{id}`. No usa base de datos, JPA ni Lombok. Con `--allow-execution`, tambien se valida mediante `mvn test`.
+
 Ejecutar un objetivo con Ollama real:
 
 ```powershell
@@ -298,7 +318,11 @@ Estrategias actuales:
 
 `fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`. Para modulos locales como `app`, `todo` o `models`, el target del fix son archivos Python (`tests/test_app.py`, `app.py`), no `requirements.txt`. Si se intenta aplicar un fix local a `requirements.txt`, `FileAgent` lo rechaza como `wrong_target_fix`.
 
-Para proyectos Spring Boot minimos, el baseline determinista crea un `pom.xml` Spring Boot 3 con Java 17, `DemoApplication`, `HealthController` con `GET /health` y un test `MockMvc` que valida estado 200 y body `OK`. `FailureAnalysisService` reconoce errores Maven basicos como fallos de compilacion, tests fallidos, dependencias ausentes, version Java incorrecta y paquetes o clases no encontrados.
+Para proyectos Spring Boot minimos, el baseline determinista crea un `pom.xml` Spring Boot 3 con Java 17, `DemoApplication`, `HealthController` con `GET /health` y un test `MockMvc` que valida estado 200 y body `OK`.
+
+Para objetivos que contienen `Spring Boot`, `CRUD` y `usuarios`, el baseline crea una API CRUD in-memory con `User`, `UserService`, `UserController` y `UserControllerTest`. El servicio usa `Map<Long, User>`, el controller expone los endpoints `/users` y los tests validan listar, crear, obtener y eliminar usuarios con MockMvc.
+
+`FailureAnalysisService` reconoce errores Maven basicos como fallos de compilacion, tests fallidos, dependencias ausentes, version Java incorrecta y paquetes o clases no encontrados.
 
 Limites actuales:
 

@@ -210,6 +210,12 @@ class CoderAgent(BaseAgent):
             "spring_boot_health_controller",
             "spring_boot_health_test",
             "spring_boot_readme",
+            "spring_boot_crud_pom",
+            "spring_boot_user_model",
+            "spring_boot_user_service",
+            "spring_boot_user_controller",
+            "spring_boot_user_controller_test",
+            "spring_boot_user_crud_readme",
         }
         return target_path in flask_files | cli_files or artifact in stable_artifacts
 
@@ -415,10 +421,24 @@ class CoderAgent(BaseAgent):
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
+        if artifact == "spring_boot_crud_pom":
+            return self._spring_boot_pom_content("Spring Boot user CRUD API")
         if artifact == "spring_boot_pom" or target_path == "pom.xml":
             return self._spring_boot_pom_content()
         if artifact == "spring_boot_application" or target_path.endswith("DemoApplication.java"):
             return self._spring_boot_application_content()
+        if artifact == "spring_boot_user_model" or target_path.endswith("User.java"):
+            return self._spring_boot_user_model_content()
+        if artifact == "spring_boot_user_service" or target_path.endswith("UserService.java"):
+            return self._spring_boot_user_service_content()
+        if artifact == "spring_boot_user_controller" or target_path.endswith("UserController.java"):
+            return self._spring_boot_user_controller_content()
+        if artifact == "spring_boot_user_controller_test" or target_path.endswith(
+            "UserControllerTest.java"
+        ):
+            return self._spring_boot_user_controller_test_content()
+        if artifact == "spring_boot_user_crud_readme":
+            return self._spring_boot_user_crud_readme_content()
         if artifact == "spring_boot_health_controller" or target_path.endswith(
             "HealthController.java"
         ):
@@ -664,7 +684,7 @@ class CoderAgent(BaseAgent):
             ]
         )
 
-    def _spring_boot_pom_content(self) -> str:
+    def _spring_boot_pom_content(self, description: str = "Minimal Spring Boot health API") -> str:
         """Return a stable Spring Boot 3 Maven pom."""
         return "\n".join(
             [
@@ -684,7 +704,7 @@ class CoderAgent(BaseAgent):
                 "    <artifactId>demo</artifactId>",
                 "    <version>0.0.1-SNAPSHOT</version>",
                 "    <name>demo</name>",
-                "    <description>Minimal Spring Boot health API</description>",
+                f"    <description>{description}</description>",
                 "    <properties>",
                 "        <java.version>17</java.version>",
                 "    </properties>",
@@ -708,6 +728,233 @@ class CoderAgent(BaseAgent):
                 "        </plugins>",
                 "    </build>",
                 "</project>",
+                "",
+            ]
+        )
+
+    def _spring_boot_user_model_content(self) -> str:
+        """Return a stable user DTO without persistence annotations."""
+        return "\n".join(
+            [
+                "package com.example.demo.user;",
+                "",
+                "public record User(Long id, String name, String email) {",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_user_service_content(self) -> str:
+        """Return an in-memory user service using Map<Long, User>."""
+        return "\n".join(
+            [
+                "package com.example.demo.user;",
+                "",
+                "import java.util.ArrayList;",
+                "import java.util.List;",
+                "import java.util.Map;",
+                "import java.util.Optional;",
+                "import java.util.concurrent.ConcurrentHashMap;",
+                "import java.util.concurrent.atomic.AtomicLong;",
+                "",
+                "import org.springframework.stereotype.Service;",
+                "",
+                "@Service",
+                "public class UserService {",
+                "",
+                "    private final Map<Long, User> users = new ConcurrentHashMap<>();",
+                "    private final AtomicLong nextId = new AtomicLong(1);",
+                "",
+                "    public List<User> findAll() {",
+                "        return new ArrayList<>(users.values());",
+                "    }",
+                "",
+                "    public Optional<User> findById(Long id) {",
+                "        return Optional.ofNullable(users.get(id));",
+                "    }",
+                "",
+                "    public User create(User user) {",
+                "        Long id = nextId.getAndIncrement();",
+                "        User created = new User(id, user.name(), user.email());",
+                "        users.put(id, created);",
+                "        return created;",
+                "    }",
+                "",
+                "    public boolean delete(Long id) {",
+                "        return users.remove(id) != null;",
+                "    }",
+                "",
+                "    public void clear() {",
+                "        users.clear();",
+                "        nextId.set(1);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_user_controller_content(self) -> str:
+        """Return a stable user CRUD controller."""
+        return "\n".join(
+            [
+                "package com.example.demo.user;",
+                "",
+                "import java.util.List;",
+                "",
+                "import org.springframework.http.HttpStatus;",
+                "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.web.bind.annotation.DeleteMapping;",
+                "import org.springframework.web.bind.annotation.GetMapping;",
+                "import org.springframework.web.bind.annotation.PathVariable;",
+                "import org.springframework.web.bind.annotation.PostMapping;",
+                "import org.springframework.web.bind.annotation.RequestBody;",
+                "import org.springframework.web.bind.annotation.RequestMapping;",
+                "import org.springframework.web.bind.annotation.RestController;",
+                "",
+                "@RestController",
+                '@RequestMapping("/users")',
+                "public class UserController {",
+                "",
+                "    private final UserService userService;",
+                "",
+                "    public UserController(UserService userService) {",
+                "        this.userService = userService;",
+                "    }",
+                "",
+                "    @GetMapping",
+                "    public List<User> listUsers() {",
+                "        return userService.findAll();",
+                "    }",
+                "",
+                '    @GetMapping("/{id}")',
+                "    public ResponseEntity<User> getUser(@PathVariable Long id) {",
+                "        return userService.findById(id)",
+                "                .map(ResponseEntity::ok)",
+                "                .orElseGet(() -> ResponseEntity.notFound().build());",
+                "    }",
+                "",
+                "    @PostMapping",
+                "    public ResponseEntity<User> createUser(@RequestBody User user) {",
+                "        return ResponseEntity.status(HttpStatus.CREATED)",
+                "                .body(userService.create(user));",
+                "    }",
+                "",
+                '    @DeleteMapping("/{id}")',
+                "    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {",
+                "        if (userService.delete(id)) {",
+                "            return ResponseEntity.noContent().build();",
+                "        }",
+                "        return ResponseEntity.notFound().build();",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_user_controller_test_content(self) -> str:
+        """Return stable MockMvc tests for the user CRUD controller."""
+        return "\n".join(
+            [
+                "package com.example.demo.user;",
+                "",
+                "import org.junit.jupiter.api.BeforeEach;",
+                "import org.junit.jupiter.api.Test;",
+                "import org.springframework.beans.factory.annotation.Autowired;",
+                "import org.springframework.boot.test.autoconfigure.web.servlet."
+                "AutoConfigureMockMvc;",
+                "import org.springframework.boot.test.context.SpringBootTest;",
+                "import org.springframework.http.MediaType;",
+                "import org.springframework.test.web.servlet.MockMvc;",
+                "",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.delete;",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.get;",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.post;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.content;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.jsonPath;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.status;",
+                "",
+                "@SpringBootTest",
+                "@AutoConfigureMockMvc",
+                "class UserControllerTest {",
+                "",
+                "    @Autowired",
+                "    private MockMvc mockMvc;",
+                "",
+                "    @Autowired",
+                "    private UserService userService;",
+                "",
+                "    @BeforeEach",
+                "    void setUp() {",
+                "        userService.clear();",
+                "    }",
+                "",
+                "    @Test",
+                "    void listUsersReturnsOk() throws Exception {",
+                '        mockMvc.perform(get("/users"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(content().json("[]"));',
+                "    }",
+                "",
+                "    @Test",
+                "    void createGetAndDeleteUser() throws Exception {",
+                '        String body = """',
+                '                {"name":"Ada Lovelace","email":"ada@example.com"}',
+                '                """;',
+                "",
+                '        mockMvc.perform(post("/users")',
+                "                        .contentType(MediaType.APPLICATION_JSON)",
+                "                        .content(body))",
+                "                .andExpect(status().isCreated())",
+                '                .andExpect(jsonPath("$.id").value(1))',
+                '                .andExpect(jsonPath("$.name").value("Ada Lovelace"))',
+                '                .andExpect(jsonPath("$.email").value("ada@example.com"));',
+                "",
+                '        mockMvc.perform(get("/users/1"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(jsonPath("$.id").value(1))',
+                '                .andExpect(jsonPath("$.name").value("Ada Lovelace"));',
+                "",
+                '        mockMvc.perform(delete("/users/1"))',
+                "                .andExpect(status().isNoContent());",
+                "",
+                '        mockMvc.perform(get("/users/1"))',
+                "                .andExpect(status().isNotFound());",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_user_crud_readme_content(self) -> str:
+        """Return README content for the Spring Boot user CRUD API."""
+        return "\n".join(
+            [
+                "# Spring Boot User CRUD API",
+                "",
+                "API Spring Boot 3 con Java 17 para gestionar usuarios en memoria.",
+                "",
+                "## Endpoints",
+                "",
+                "- `GET /users` lista usuarios.",
+                "- `GET /users/{id}` obtiene un usuario.",
+                "- `POST /users` crea un usuario.",
+                "- `DELETE /users/{id}` elimina un usuario.",
+                "",
+                "## Persistencia",
+                "",
+                "Usa `Map<Long, User>` en memoria. No usa DB, JPA ni Lombok.",
+                "",
+                "## Tests",
+                "",
+                "Ejecuta `mvn test` dentro del workspace.",
+                "",
+                "Requiere Java 17 y Maven instalados.",
                 "",
             ]
         )

@@ -247,6 +247,104 @@ async def test_spring_boot_mock_workflow_completes(tmp_path: Path) -> None:
     assert "pom.xml" in summary.files_created
 
 
+async def test_spring_boot_user_crud_mock_generates_stable_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Crea una API Spring Boot CRUD de usuarios con tests basicos",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    user = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "user" / "User.java"
+    ).read_text(encoding="utf-8")
+    service = (
+        workspace
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "user"
+        / "UserService.java"
+    ).read_text(encoding="utf-8")
+    controller = (
+        workspace
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "user"
+        / "UserController.java"
+    ).read_text(encoding="utf-8")
+    tests = (
+        workspace
+        / "src"
+        / "test"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "user"
+        / "UserControllerTest.java"
+    ).read_text(encoding="utf-8")
+    readme = (workspace / "README.md").read_text(encoding="utf-8")
+    pom = (workspace / "pom.xml").read_text(encoding="utf-8")
+    assert summary.status == "completed"
+    assert sorted(summary.files_created) == [
+        "README.md",
+        "pom.xml",
+        "src/main/java/com/example/demo/DemoApplication.java",
+        "src/main/java/com/example/demo/user/User.java",
+        "src/main/java/com/example/demo/user/UserController.java",
+        "src/main/java/com/example/demo/user/UserService.java",
+        "src/test/java/com/example/demo/user/UserControllerTest.java",
+    ]
+    assert "spring-boot-starter-web" in pom
+    assert "spring-boot-starter-data-jpa" not in pom
+    assert "lombok" not in pom.lower()
+    assert "record User(Long id, String name, String email)" in user
+    assert "Map<Long, User>" in service
+    assert "ConcurrentHashMap" in service
+    assert '@RequestMapping("/users")' in controller
+    assert "@GetMapping" in controller
+    assert '@GetMapping("/{id}")' in controller
+    assert "@PostMapping" in controller
+    assert '@DeleteMapping("/{id}")' in controller
+    assert "MockMvc" in tests
+    assert 'get("/users")' in tests
+    assert 'post("/users")' in tests
+    assert 'get("/users/1")' in tests
+    assert 'delete("/users/1")' in tests
+    assert "status().isNoContent()" in tests
+    assert "/users" in readme
+    assert "Map<Long, User>" in readme
+
+
+async def test_spring_boot_user_crud_mock_workflow_completes(tmp_path: Path) -> None:
+    runtime = AgentRuntime(
+        "Crea una API Spring Boot CRUD de usuarios con tests basicos",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert "src/main/java/com/example/demo/user/UserController.java" in summary.files_created
+
+
 def test_reviewer_validates_spring_boot_project() -> None:
     reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
 
@@ -269,6 +367,42 @@ def test_reviewer_validates_spring_boot_project() -> None:
                 'MockMvc mockMvc; status().isOk(); content().string("OK");'
             ),
             "README.md": "Spring Boot API con GET /health.",
+        }
+    )
+
+    assert feedback == []
+
+
+def test_reviewer_validates_spring_boot_user_crud_project() -> None:
+    reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
+
+    feedback = reviewer._project_feedback(
+        {
+            "pom.xml": (
+                "<project><parent><artifactId>spring-boot-starter-parent</artifactId>"
+                "</parent><properties><java.version>17</java.version></properties>"
+                "<dependency><artifactId>spring-boot-starter-web</artifactId></dependency>"
+                "<dependency><artifactId>spring-boot-starter-test</artifactId></dependency>"
+                "</project>"
+            ),
+            "src/main/java/com/example/demo/DemoApplication.java": (
+                "@SpringBootApplication class DemoApplication {}"
+            ),
+            "src/main/java/com/example/demo/user/User.java": (
+                "public record User(Long id, String name, String email) {}"
+            ),
+            "src/main/java/com/example/demo/user/UserService.java": (
+                "Map<Long, User> users; findAll(); findById(1L); create(user); delete(1L);"
+            ),
+            "src/main/java/com/example/demo/user/UserController.java": (
+                '@RequestMapping("/users") @GetMapping @GetMapping("/{id}") '
+                '@PostMapping @DeleteMapping("/{id}")'
+            ),
+            "src/test/java/com/example/demo/user/UserControllerTest.java": (
+                'MockMvc mockMvc; get("/users"); post("/users"); get("/users/1"); '
+                'delete("/users/1"); status().isNoContent();'
+            ),
+            "README.md": "Spring Boot CRUD API con GET /users.",
         }
     )
 

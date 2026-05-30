@@ -191,6 +191,10 @@ class TesterExecutionAgent(BaseAgent):
             "src/main/java/com/example/demo/DemoApplication.java",
             "src/main/java/com/example/demo/HealthController.java",
             "src/test/java/com/example/demo/HealthControllerTest.java",
+            "src/main/java/com/example/demo/user/User.java",
+            "src/main/java/com/example/demo/user/UserController.java",
+            "src/main/java/com/example/demo/user/UserService.java",
+            "src/test/java/com/example/demo/user/UserControllerTest.java",
         ):
             if path in combined:
                 candidates.append(path)
@@ -205,6 +209,10 @@ class TesterExecutionAgent(BaseAgent):
                 "src/main/java/com/example/demo/DemoApplication.java",
                 "src/main/java/com/example/demo/HealthController.java",
                 "src/test/java/com/example/demo/HealthControllerTest.java",
+                "src/main/java/com/example/demo/user/User.java",
+                "src/main/java/com/example/demo/user/UserController.java",
+                "src/main/java/com/example/demo/user/UserService.java",
+                "src/test/java/com/example/demo/user/UserControllerTest.java",
             ]
         if "No module named 'app'" in combined or 'No module named "app"' in combined:
             return ["tests/test_app.py", "app.py"]

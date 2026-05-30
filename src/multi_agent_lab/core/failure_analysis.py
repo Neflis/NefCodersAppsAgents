@@ -176,6 +176,10 @@ class FailureAnalysisService:
                 "src/main/java/com/example/demo/DemoApplication.java",
                 "src/main/java/com/example/demo/HealthController.java",
                 "src/test/java/com/example/demo/HealthControllerTest.java",
+                "src/main/java/com/example/demo/user/User.java",
+                "src/main/java/com/example/demo/user/UserController.java",
+                "src/main/java/com/example/demo/user/UserService.java",
+                "src/test/java/com/example/demo/user/UserControllerTest.java",
             ):
                 if path not in files:
                     files.append(path)
