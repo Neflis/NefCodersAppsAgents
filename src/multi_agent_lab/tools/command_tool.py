@@ -84,9 +84,9 @@ class CommandTool:
         )
         return self.run_command("python", [relative_path])
 
-    def run_pytest(self) -> CommandExecutionResult:
+    def run_pytest(self, args: list[str] | None = None) -> CommandExecutionResult:
         """Run pytest in the workspace."""
-        return self.run_command("pytest", [])
+        return self.run_command("pytest", args or [])
 
     def run_pip_check(self) -> CommandExecutionResult:
         """Run pip check in the workspace."""
@@ -142,8 +142,9 @@ class CommandTool:
         if command_id == "pip":
             self._validate_pip_args(args)
             return
-        if command_id == "pytest" and args:
-            raise CommandToolError("pytest arguments are not allowed.")
+        if command_id == "pytest":
+            self._validate_pytest_args(args)
+            return
         if command_id == "python" and len(args) != 1:
             raise CommandToolError("python requires exactly one workspace .py path.")
         for arg in args:
@@ -172,11 +173,19 @@ class CommandTool:
             "Only 'pip check' and 'pip install -r requirements.txt' are allowed."
         )
 
+    def _validate_pytest_args(self, args: list[str]) -> None:
+        """Allow pytest with no args or explicit safe test files."""
+        for arg in args:
+            self._validate_arg(arg)
+            path = Path(arg)
+            if path.suffix != ".py" or not path.as_posix().startswith("tests/"):
+                raise CommandToolError("pytest can only target safe tests/*.py files.")
+
     def _command_vector(self, command_id: str, args: list[str]) -> list[str]:
         if command_id == "python":
             return ["python", *args]
         if command_id == "pytest":
-            return ["python", "-m", "pytest"]
+            return ["python", "-m", "pytest", *args]
         if command_id == "pip":
             return ["python", "-m", "pip", *args]
         raise CommandToolError(f"Command is not whitelisted: {command_id}")

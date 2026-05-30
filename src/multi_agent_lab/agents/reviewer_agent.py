@@ -137,6 +137,12 @@ class ReviewerAgent(BaseAgent):
         )
 
     def _project_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a generated multi-file project."""
+        if "task_cli.py" in files:
+            return self._python_cli_feedback(files)
+        return self._flask_project_feedback(files)
+
+    def _flask_project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a multi-file Flask project."""
         feedback: list[str] = []
         app = files.get("app.py", "")
@@ -148,6 +154,29 @@ class ReviewerAgent(BaseAgent):
             feedback.append("README.md debe describir la API Flask TODO.")
         if "GET /todos" not in readme and "/todos" not in readme:
             feedback.append("README.md debe mencionar los endpoints TODO.")
+        return feedback
+
+    def _python_cli_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a Python task CLI project."""
+        feedback: list[str] = []
+        cli = files.get("task_cli.py", "")
+        tests = files.get("tests/test_task_cli.py", "")
+        requirements = files.get("requirements.txt", "")
+        readme = files.get("README.md", "")
+        if "argparse" not in cli:
+            feedback.append("task_cli.py debe usar argparse.")
+        for name in ("add_task", "list_tasks", "mark_done"):
+            if f"def {name}" not in cli:
+                feedback.append(f"task_cli.py debe definir {name}.")
+        if "pytest" not in requirements.lower():
+            feedback.append("requirements.txt debe incluir pytest.")
+        if "from task_cli import" not in tests:
+            feedback.append("tests/test_task_cli.py debe importar funciones de task_cli.")
+        forbidden = ("import db", "Todo", "create_app")
+        if any(token in tests for token in forbidden):
+            feedback.append("tests/test_task_cli.py no debe importar db, Todo ni create_app.")
+        if "cli" not in readme.lower() or "add" not in readme.lower():
+            feedback.append("README.md debe explicar uso basico de la CLI.")
         return feedback
 
     def _is_valid_content(self, path: str, content: str) -> bool:

@@ -103,9 +103,7 @@ class TesterExecutionAgent(BaseAgent):
         """Run validation commands through their safest CommandTool entrypoints."""
         normalized_args = [str(arg) for arg in args]
         if command_id == "pytest":
-            if normalized_args:
-                raise CommandToolError("pytest arguments are not allowed.")
-            return self.command_tool.run_pytest()
+            return self.command_tool.run_pytest(normalized_args)
         return self.command_tool.run_command(command_id, normalized_args)
 
     async def _publish_failed(

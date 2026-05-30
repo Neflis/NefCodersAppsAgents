@@ -48,6 +48,31 @@ def test_pytest_can_import_workspace_app_module(tmp_path: Path) -> None:
     assert result.success
 
 
+def test_pytest_can_target_safe_test_file(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+    workspace = tmp_path / "workspace"
+    tests_dir = workspace / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_selected.py").write_text(
+        "def test_selected():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    result = tool.run_pytest(["tests/test_selected.py"])
+
+    assert result.success
+
+
+def test_pytest_rejects_unsafe_target(tmp_path: Path) -> None:
+    tool = command_tool(tmp_path)
+
+    with pytest.raises(CommandToolError):
+        tool.run_pytest(["../outside.py"])
+
+    with pytest.raises(CommandToolError):
+        tool.run_pytest(["task_cli.py"])
+
+
 def test_pip_install_requirements_is_allowed(tmp_path: Path) -> None:
     tool = command_tool(tmp_path)
 
@@ -171,8 +196,9 @@ async def test_execution_agent_uses_run_pytest_entrypoint() -> None:
             self.used_run_pytest = False
             self.used_run_command = False
 
-        def run_pytest(self):
+        def run_pytest(self, args=None):  # noqa: ANN001
             self.used_run_pytest = True
+            self.args = args or []
             return type(
                 "Result",
                 (),
@@ -207,4 +233,5 @@ async def test_execution_agent_uses_run_pytest_entrypoint() -> None:
 
     await passed.get()
     assert tool.used_run_pytest
+    assert tool.args == []
     assert not tool.used_run_command

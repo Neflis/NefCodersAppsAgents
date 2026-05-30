@@ -92,6 +92,8 @@ class PlannerAgent(BaseAgent):
         graph = TaskGraph(Goal(goal_title, correlation_id))
         if self._is_flask_api_goal(goal_title):
             return self._build_flask_api_graph(graph, allow_execution)
+        if self._is_python_cli_task_goal(goal_title):
+            return self._build_python_cli_graph(graph, allow_execution)
 
         task_specs = (
             decision.content
@@ -137,6 +139,97 @@ class PlannerAgent(BaseAgent):
                 required_capability=Capability.TESTING_MOCK.value,
                 payload={"path": target_path},
                 dependencies={write.id},
+                priority=4,
+            )
+        )
+        return graph
+
+    def _build_python_cli_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
+        """Create a deterministic Python task CLI graph."""
+        requirements = graph.add_task(
+            TaskNode(
+                title="Crear requirements.txt",
+                description="Declarar dependencias de test para la CLI Python.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "requirements.txt", "artifact": "cli_requirements"},
+                priority=10,
+            )
+        )
+        cli = graph.add_task(
+            TaskNode(
+                title="Crear task_cli.py",
+                description="Implementar CLI Python de tareas con argparse.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "task_cli.py", "artifact": "python_task_cli"},
+                dependencies={requirements.id},
+                priority=9,
+            )
+        )
+        tests = graph.add_task(
+            TaskNode(
+                title="Crear tests CLI",
+                description="Crear tests pytest para add/list/done sin shell.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "tests/test_task_cli.py", "artifact": "python_cli_tests"},
+                dependencies={cli.id},
+                priority=8,
+            )
+        )
+        readme = graph.add_task(
+            TaskNode(
+                title="Crear README.md",
+                description="Documentar uso basico de la CLI Python.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "README.md", "artifact": "python_cli_readme"},
+                dependencies={tests.id},
+                priority=7,
+            )
+        )
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar coherencia final de CLI",
+                description="Validar coherencia entre CLI, tests, requirements y README.",
+                required_capability=Capability.REVIEWING.value,
+                payload={
+                    "project_review": True,
+                    "paths": [
+                        "task_cli.py",
+                        "requirements.txt",
+                        "tests/test_task_cli.py",
+                        "README.md",
+                    ],
+                },
+                dependencies={readme.id},
+                priority=6,
+            )
+        )
+        if allow_execution:
+            graph.add_task(
+                TaskNode(
+                    title="Ejecutar validacion pytest",
+                    description="Ejecutar pytest dentro del workspace con whitelist estricta.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "pytest", "args": ["tests/test_task_cli.py"]},
+                    dependencies={review.id},
+                    priority=4,
+                )
+            )
+            return graph
+
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia de archivos CLI",
+                description="Comprobar que los archivos finales existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={
+                    "paths": [
+                        "task_cli.py",
+                        "requirements.txt",
+                        "tests/test_task_cli.py",
+                        "README.md",
+                    ]
+                },
+                dependencies={review.id},
                 priority=4,
             )
         )
@@ -304,6 +397,11 @@ class PlannerAgent(BaseAgent):
         """Return whether a goal asks for a Flask API project."""
         lowered = goal_title.lower()
         return "flask" in lowered and "api" in lowered
+
+    def _is_python_cli_task_goal(self, goal_title: str) -> bool:
+        """Return whether a goal asks for a Python task CLI."""
+        lowered = goal_title.lower()
+        return "cli" in lowered and "python" in lowered and "tareas" in lowered
 
     def _build_graph_from_specs(
         self,

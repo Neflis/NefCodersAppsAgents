@@ -98,6 +98,86 @@ async def test_flask_todo_baseline_pytest_passes_with_execution(tmp_path: Path) 
     assert summary.execution_failure_count == 0
 
 
+async def test_python_cli_mock_generates_stable_baseline(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Crea una CLI Python para gestionar tareas con tests basicos",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    cli = (workspace / "task_cli.py").read_text(encoding="utf-8")
+    requirements = (workspace / "requirements.txt").read_text(encoding="utf-8")
+    tests = (workspace / "tests" / "test_task_cli.py").read_text(encoding="utf-8")
+    readme = (workspace / "README.md").read_text(encoding="utf-8")
+    assert summary.status == "completed"
+    assert sorted(summary.files_created) == [
+        "README.md",
+        "requirements.txt",
+        "task_cli.py",
+        "tests/test_task_cli.py",
+    ]
+    assert "import argparse" in cli
+    assert "def add_task" in cli
+    assert "def list_tasks" in cli
+    assert "def mark_done" in cli
+    assert "add_parser = subparsers.add_parser('add')" in cli
+    assert "subparsers.add_parser('list')" in cli
+    assert "done_parser = subparsers.add_parser('done')" in cli
+    assert requirements == "pytest\n"
+    assert "from task_cli import add_task, list_tasks, mark_done" in tests
+    assert "import db" not in tests
+    assert "Todo" not in tests
+    assert "create_app" not in tests
+    assert "CLI Python" in readme or "Task CLI" in readme
+
+
+async def test_python_cli_baseline_pytest_passes_with_execution(tmp_path: Path) -> None:
+    runtime = AgentRuntime(
+        "Crea una CLI Python para gestionar tareas con tests basicos",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert summary.execution_success_count == 1
+    assert summary.execution_failure_count == 0
+
+
+async def test_python_cli_execution_targets_cli_tests(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tests_dir = workspace / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_app.py").write_text(
+        "def test_unrelated_failure():\n    assert False\n",
+        encoding="utf-8",
+    )
+    runtime = AgentRuntime(
+        "Crea una CLI Python para gestionar tareas con tests basicos",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert summary.execution_success_count == 1
+    assert summary.execution_failure_count == 0
+
+
 def test_reviewer_detects_flask_import_without_requirement() -> None:
     reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
 

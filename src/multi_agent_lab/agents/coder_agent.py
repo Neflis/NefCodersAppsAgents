@@ -58,7 +58,7 @@ class CoderAgent(BaseAgent):
             target_path,
         )
 
-        if self._uses_stable_flask_baseline(target_path, artifact):
+        if self._uses_stable_baseline(target_path, artifact):
             proposed_content = self._mock_file_content(title, target_path, artifact)
         else:
             decision = await self._decide(message, title, target_path)
@@ -193,13 +193,20 @@ class CoderAgent(BaseAgent):
             return ["app.py"]
         return []
 
-    def _uses_stable_flask_baseline(self, target_path: str, artifact: str) -> bool:
-        """Return whether a Flask TODO demo file must be deterministic."""
-        return target_path in {"app.py", "requirements.txt", "tests/test_app.py"} or artifact in {
+    def _uses_stable_baseline(self, target_path: str, artifact: str) -> bool:
+        """Return whether a demo file must be deterministic."""
+        flask_files = {"app.py", "tests/test_app.py"}
+        cli_files = {"task_cli.py", "tests/test_task_cli.py"}
+        stable_artifacts = {
             "flask_app",
             "requirements",
             "pytest_tests",
+            "cli_requirements",
+            "python_task_cli",
+            "python_cli_tests",
+            "python_cli_readme",
         }
+        return target_path in flask_files | cli_files or artifact in stable_artifacts
 
     async def _fix_content(
         self,
@@ -399,8 +406,12 @@ class CoderAgent(BaseAgent):
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
+        if artifact == "cli_requirements":
+            return "pytest\n"
         if target_path == "requirements.txt":
             return "Flask\npytest\n"
+        if target_path == "task_cli.py" or artifact == "python_task_cli":
+            return self._python_task_cli_content()
         if target_path == "app.py":
             return "\n".join(
                 [
@@ -484,8 +495,29 @@ class CoderAgent(BaseAgent):
                     "",
                 ]
             )
+        if target_path == "tests/test_task_cli.py" or artifact == "python_cli_tests":
+            return self._python_cli_tests_content()
         if artifact == "design":
             return "Estructura: app.py, requirements.txt y README.md para API Flask TODO."
+        if artifact == "python_cli_readme":
+            return "\n".join(
+                [
+                    "# Task CLI",
+                    "",
+                    "CLI Python sencilla para gestionar tareas en memoria o en JSON local.",
+                    "",
+                    "## Uso",
+                    "",
+                    '- `python task_cli.py add "Comprar pan"`',
+                    "- `python task_cli.py list`",
+                    "- `python task_cli.py done 1`",
+                    "",
+                    "## Tests",
+                    "",
+                    "Ejecuta `pytest` dentro del workspace.",
+                    "",
+                ]
+            )
         return "\n".join(
             [
                 "# Flask TODO API",
@@ -504,6 +536,149 @@ class CoderAgent(BaseAgent):
                 "Instala dependencias y ejecuta `app.py` en un entorno local controlado.",
                 "",
                 f"Generado para: {title}",
+                "",
+            ]
+        )
+
+    def _python_task_cli_content(self) -> str:
+        """Return a stable task CLI implementation."""
+        return "\n".join(
+            [
+                "from __future__ import annotations",
+                "",
+                "import argparse",
+                "import json",
+                "from pathlib import Path",
+                "",
+                "DEFAULT_STORE = Path('tasks.json')",
+                "",
+                "",
+                "def load_tasks(",
+                "    store_path: str | Path = DEFAULT_STORE,",
+                ") -> list[dict[str, object]]:",
+                "    path = Path(store_path)",
+                "    if not path.exists():",
+                "        return []",
+                "    return list(json.loads(path.read_text(encoding='utf-8')))",
+                "",
+                "",
+                "def save_tasks(",
+                "    tasks: list[dict[str, object]],",
+                "    store_path: str | Path = DEFAULT_STORE,",
+                ") -> None:",
+                "    path = Path(store_path)",
+                "    path.write_text(json.dumps(tasks, indent=2), encoding='utf-8')",
+                "",
+                "",
+                "def add_task(",
+                "    title: str,",
+                "    tasks: list[dict[str, object]] | None = None,",
+                ") -> tuple[list[dict[str, object]], dict[str, object]]:",
+                "    items = list(tasks or [])",
+                "    next_id = max((int(task['id']) for task in items), default=0) + 1",
+                "    task = {'id': next_id, 'title': title, 'done': False}",
+                "    items.append(task)",
+                "    return items, task",
+                "",
+                "",
+                "def list_tasks(tasks: list[dict[str, object]]) -> list[dict[str, object]]:",
+                "    return list(tasks)",
+                "",
+                "",
+                "def mark_done(",
+                "    task_id: int,",
+                "    tasks: list[dict[str, object]],",
+                ") -> tuple[list[dict[str, object]], dict[str, object] | None]:",
+                "    items = [dict(task) for task in tasks]",
+                "    for task in items:",
+                "        if int(task['id']) == task_id:",
+                "            task['done'] = True",
+                "            return items, task",
+                "    return items, None",
+                "",
+                "",
+                "def build_parser() -> argparse.ArgumentParser:",
+                "    parser = argparse.ArgumentParser(description='Task manager CLI')",
+                "    subparsers = parser.add_subparsers(dest='command', required=True)",
+                "    add_parser = subparsers.add_parser('add')",
+                "    add_parser.add_argument('title')",
+                "    subparsers.add_parser('list')",
+                "    done_parser = subparsers.add_parser('done')",
+                "    done_parser.add_argument('task_id', type=int)",
+                "    return parser",
+                "",
+                "",
+                "def main(",
+                "    argv: list[str] | None = None,",
+                "    store_path: str | Path = DEFAULT_STORE,",
+                ") -> int:",
+                "    args = build_parser().parse_args(argv)",
+                "    tasks = load_tasks(store_path)",
+                "    if args.command == 'add':",
+                "        tasks, task = add_task(args.title, tasks)",
+                "        save_tasks(tasks, store_path)",
+                "        print(f\"Added #{task['id']}: {task['title']}\")",
+                "        return 0",
+                "    if args.command == 'list':",
+                "        for task in list_tasks(tasks):",
+                "            status = 'x' if task['done'] else ' '",
+                "            print(f\"[{status}] {task['id']}: {task['title']}\")",
+                "        return 0",
+                "    if args.command == 'done':",
+                "        tasks, task = mark_done(args.task_id, tasks)",
+                "        if task is None:",
+                "            print('Task not found')",
+                "            return 1",
+                "        save_tasks(tasks, store_path)",
+                "        print(f\"Done #{task['id']}: {task['title']}\")",
+                "        return 0",
+                "    return 1",
+                "",
+                "",
+                "if __name__ == '__main__':",
+                "    raise SystemExit(main())",
+                "",
+            ]
+        )
+
+    def _python_cli_tests_content(self) -> str:
+        """Return stable tests for the task CLI."""
+        return "\n".join(
+            [
+                "from task_cli import add_task, list_tasks, mark_done",
+                "",
+                "",
+                "def test_add_task():",
+                "    tasks, task = add_task('Comprar pan')",
+                "",
+                "    assert task == {'id': 1, 'title': 'Comprar pan', 'done': False}",
+                "    assert tasks == [task]",
+                "",
+                "",
+                "def test_list_tasks_returns_copy():",
+                "    tasks = [{'id': 1, 'title': 'Comprar pan', 'done': False}]",
+                "",
+                "    assert list_tasks(tasks) == tasks",
+                "    assert list_tasks(tasks) is not tasks",
+                "",
+                "",
+                "def test_mark_done():",
+                "    tasks = [{'id': 1, 'title': 'Comprar pan', 'done': False}]",
+                "",
+                "    updated, task = mark_done(1, tasks)",
+                "",
+                "    assert task == {'id': 1, 'title': 'Comprar pan', 'done': True}",
+                "    assert updated == [task]",
+                "    assert tasks[0]['done'] is False",
+                "",
+                "",
+                "def test_mark_done_missing_task():",
+                "    tasks = [{'id': 1, 'title': 'Comprar pan', 'done': False}]",
+                "",
+                "    updated, task = mark_done(999, tasks)",
+                "",
+                "    assert task is None",
+                "    assert updated == tasks",
                 "",
             ]
         )
