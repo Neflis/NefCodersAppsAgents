@@ -138,9 +138,42 @@ class ReviewerAgent(BaseAgent):
 
     def _project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a generated multi-file project."""
+        if "pom.xml" in files:
+            return self._spring_boot_feedback(files)
         if "task_cli.py" in files:
             return self._python_cli_feedback(files)
         return self._flask_project_feedback(files)
+
+    def _spring_boot_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for a minimal Spring Boot project."""
+        feedback: list[str] = []
+        pom = files.get("pom.xml", "")
+        application = files.get("src/main/java/com/example/demo/DemoApplication.java", "")
+        controller = files.get("src/main/java/com/example/demo/HealthController.java", "")
+        tests = files.get("src/test/java/com/example/demo/HealthControllerTest.java", "")
+        readme = files.get("README.md", "")
+        if "spring-boot-starter-parent" not in pom:
+            feedback.append("pom.xml debe usar Spring Boot 3.")
+        if "<java.version>17</java.version>" not in pom:
+            feedback.append("pom.xml debe configurar Java 17.")
+        if "spring-boot-starter-web" not in pom:
+            feedback.append("pom.xml debe incluir spring-boot-starter-web.")
+        if "spring-boot-starter-test" not in pom:
+            feedback.append("pom.xml debe incluir spring-boot-starter-test.")
+        forbidden = ("spring-boot-starter-data-jpa", "lombok", "postgresql", "mysql")
+        if any(token in pom.lower() for token in forbidden):
+            feedback.append("pom.xml no debe incluir DB, JPA ni Lombok.")
+        if "@SpringBootApplication" not in application:
+            feedback.append("DemoApplication.java debe definir la aplicacion Spring Boot.")
+        if '@GetMapping("/health")' not in controller or 'return "OK";' not in controller:
+            feedback.append("HealthController.java debe exponer GET /health con respuesta OK.")
+        if "MockMvc" not in tests:
+            feedback.append("HealthControllerTest.java debe usar MockMvc.")
+        if "status().isOk()" not in tests or 'content().string("OK")' not in tests:
+            feedback.append("HealthControllerTest.java debe validar 200 y body OK.")
+        if "spring boot" not in readme.lower() or "/health" not in readme:
+            feedback.append("README.md debe documentar Spring Boot y GET /health.")
+        return feedback
 
     def _flask_project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a multi-file Flask project."""

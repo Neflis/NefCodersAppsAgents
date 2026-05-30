@@ -55,6 +55,19 @@ def test_file_tool_allows_yaml_files(tmp_path: Path) -> None:
     assert tool.exists("config.yml")
 
 
+def test_file_tool_allows_spring_boot_file_types(tmp_path: Path) -> None:
+    tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
+
+    tool.write_file("pom.xml", "<project></project>\n")
+    tool.write_file(
+        "src/main/java/com/example/demo/DemoApplication.java",
+        "package com.example.demo;\n",
+    )
+
+    assert tool.exists("pom.xml")
+    assert tool.exists("src/main/java/com/example/demo/DemoApplication.java")
+
+
 def test_file_tool_blocks_disallowed_extension(tmp_path: Path) -> None:
     tool = FileTool(WorkspaceManager(tmp_path / "workspace"))
 

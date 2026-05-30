@@ -22,6 +22,7 @@ class FixStrategy(StrEnum):
     REWRITE_FUNCTION = "rewrite_function"
     STRIP_MARKDOWN_FENCES = "strip_markdown_fences"
     FIX_LOCAL_MODULE_IMPORT = "fix_local_module_import"
+    FIX_MAVEN_COMPILATION = "fix_maven_compilation"
 
 
 @dataclass(slots=True)
@@ -105,6 +106,27 @@ class FailureAnalysisService:
         lowered = text.lower()
         if "syntaxerror" in lowered and "```" in text:
             return "MarkdownFenceSyntaxError"
+        if "source release" in lowered or "target release" in lowered:
+            return "JavaVersionMismatch"
+        if "compilation failure" in lowered or "compilation error" in lowered:
+            return "MavenCompilationError"
+        if "package" in lowered and "does not exist" in lowered:
+            return "JavaPackageNotFound"
+        if "cannot find symbol" in lowered or "class not found" in lowered:
+            return "JavaClassNotFound"
+        if "there are test failures" in lowered or "test failure" in lowered:
+            return "MavenTestFailure"
+        if any(
+            text_fragment in lowered
+            for text_fragment in (
+                "could not resolve dependencies",
+                "could not transfer artifact",
+                "non-resolvable parent pom",
+                "could not be resolved",
+                "dependency resolution",
+            )
+        ) or ("dependency" in lowered and "[error]" in lowered):
+            return "MavenMissingDependency"
         missing_module = self._extract_missing_module(text)
         if missing_module == "app":
             return "LocalModuleNotFoundError"
@@ -148,6 +170,15 @@ class FailureAnalysisService:
                 files.insert(0, "requirements.txt")
         elif "No module named" in text and "requirements.txt" not in files:
             files.insert(0, "requirements.txt")
+        if self._looks_like_maven_error(text):
+            for path in (
+                "pom.xml",
+                "src/main/java/com/example/demo/DemoApplication.java",
+                "src/main/java/com/example/demo/HealthController.java",
+                "src/test/java/com/example/demo/HealthControllerTest.java",
+            ):
+                if path not in files:
+                    files.append(path)
         return files
 
     def summarize_failure(self, context: FailureContext) -> str:
@@ -203,7 +234,7 @@ class FailureAnalysisService:
         patterns = (
             r'File "([^"]+)", line \d+',
             r"FAILED\s+([^\s:]+\.py)(?:::|:)",
-            r"((?:[A-Za-z]:)?[^\s'\"<>|]+(?:\.py|README\.md|requirements\.txt))",
+            r"((?:[A-Za-z]:)?[^\s'\"<>|]+(?:\.py|\.java|\.xml|README\.md|requirements\.txt))",
         )
         for pattern in patterns:
             for match in re.finditer(pattern, text):
@@ -211,3 +242,7 @@ class FailureAnalysisService:
                 if candidate not in candidates:
                     candidates.append(candidate)
         return candidates
+
+    def _looks_like_maven_error(self, text: str) -> bool:
+        lowered = text.lower()
+        return "maven" in lowered or "[error]" in lowered or "compilation" in lowered

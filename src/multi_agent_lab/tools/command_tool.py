@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +42,7 @@ class CommandExecutionResult:
 class CommandTool:
     """Run a strict whitelist of commands inside the workspace."""
 
-    allowed_commands = {"python", "pytest", "pip"}
+    allowed_commands = {"python", "pytest", "pip", "mvn"}
     blocked_tokens = {
         "cmd",
         "powershell",
@@ -135,6 +136,15 @@ class CommandTool:
                 duration=duration,
                 timed_out=True,
             )
+        except OSError as error:
+            duration = perf_counter() - started_at
+            return CommandExecutionResult(
+                success=False,
+                exit_code=-1,
+                stdout="",
+                stderr=self._truncate(str(error)),
+                duration=duration,
+            )
 
     def _validate_command(self, command_id: str, args: list[str]) -> None:
         if command_id not in self.allowed_commands:
@@ -144,6 +154,9 @@ class CommandTool:
             return
         if command_id == "pytest":
             self._validate_pytest_args(args)
+            return
+        if command_id == "mvn":
+            self._validate_mvn_args(args)
             return
         if command_id == "python" and len(args) != 1:
             raise CommandToolError("python requires exactly one workspace .py path.")
@@ -181,6 +194,11 @@ class CommandTool:
             if path.suffix != ".py" or not path.as_posix().startswith("tests/"):
                 raise CommandToolError("pytest can only target safe tests/*.py files.")
 
+    def _validate_mvn_args(self, args: list[str]) -> None:
+        """Allow only mvn test."""
+        if args != ["test"]:
+            raise CommandToolError("Only 'mvn test' is allowed.")
+
     def _command_vector(self, command_id: str, args: list[str]) -> list[str]:
         if command_id == "python":
             return ["python", *args]
@@ -188,7 +206,13 @@ class CommandTool:
             return ["python", "-m", "pytest", *args]
         if command_id == "pip":
             return ["python", "-m", "pip", *args]
+        if command_id == "mvn":
+            return [self._mvn_executable(), *args]
         raise CommandToolError(f"Command is not whitelisted: {command_id}")
+
+    def _mvn_executable(self) -> str:
+        """Resolve Maven executable without relying on shell command lookup."""
+        return shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
 
     def _execution_env(self) -> dict[str, str]:
         """Return an execution environment that can import local workspace modules."""

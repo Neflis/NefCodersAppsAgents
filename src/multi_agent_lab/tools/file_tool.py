@@ -24,7 +24,7 @@ class UnsupportedFileTypeError(FileToolError):
 class FileTool:
     """Read and write allowed files inside a controlled workspace."""
 
-    allowed_extensions = {".py", ".md", ".txt", ".json", ".yaml", ".yml"}
+    allowed_extensions = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".xml", ".java"}
 
     def __init__(
         self,
@@ -78,7 +78,7 @@ class FileTool:
             relative_parts = item.relative_to(self.workspace.root).parts
             if any(
                 ignored in relative_parts
-                for ignored in {".pytest_cache", "__pycache__", ".traces", ".memory"}
+                for ignored in {".pytest_cache", "__pycache__", ".traces", ".memory", "target"}
             ):
                 continue
             if item.is_file() and item.suffix in self.allowed_extensions:

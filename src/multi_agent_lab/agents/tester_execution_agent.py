@@ -46,12 +46,17 @@ class TesterExecutionAgent(BaseAgent):
             return
         await self.claim_task(message)
         payload = dict(message.content.get("payload", {}))
+        command_id = str(payload.get("command_id", "pytest"))
+        args = list(payload.get("args", []))
+        if command_id == "pytest" and self._workspace_has_pom():
+            command_id = "mvn"
+            args = ["test"]
         await self.publish(
             EventType.TEST_EXECUTION_REQUESTED,
             {
                 "task_id": message.content["task_id"],
-                "command_id": payload.get("command_id", "pytest"),
-                "args": list(payload.get("args", [])),
+                "command_id": command_id,
+                "args": args,
             },
             source=message,
         )
@@ -104,7 +109,20 @@ class TesterExecutionAgent(BaseAgent):
         normalized_args = [str(arg) for arg in args]
         if command_id == "pytest":
             return self.command_tool.run_pytest(normalized_args)
+        if command_id == "mvn":
+            return self.command_tool.run_command("mvn", normalized_args or ["test"])
         return self.command_tool.run_command(command_id, normalized_args)
+
+    def _workspace_has_pom(self) -> bool:
+        """Return whether the execution workspace contains a Maven project."""
+        workspace = getattr(self.command_tool, "workspace", None)
+        if workspace is None:
+            return False
+        try:
+            return workspace.resolve_safe_path("pom.xml").exists()
+        except Exception as error:  # noqa: BLE001
+            logger.warning("No se pudo comprobar pom.xml: %s", error)
+            return False
 
     async def _publish_failed(
         self,
@@ -164,7 +182,16 @@ class TesterExecutionAgent(BaseAgent):
         """Infer likely failed files from command output."""
         combined = f"{stdout}\n{stderr}"
         candidates = []
-        for path in ("app.py", "requirements.txt", "README.md", "tests/test_app.py"):
+        for path in (
+            "app.py",
+            "requirements.txt",
+            "README.md",
+            "pom.xml",
+            "tests/test_app.py",
+            "src/main/java/com/example/demo/DemoApplication.java",
+            "src/main/java/com/example/demo/HealthController.java",
+            "src/test/java/com/example/demo/HealthControllerTest.java",
+        ):
             if path in combined:
                 candidates.append(path)
         return candidates
@@ -172,6 +199,13 @@ class TesterExecutionAgent(BaseAgent):
     def _suggest_focus_files(self, stdout: str, stderr: str) -> list[str]:
         """Suggest safe files for a coder fix task."""
         combined = f"{stdout}\n{stderr}"
+        if "pom.xml" in combined or "maven" in combined.lower() or "[ERROR]" in combined:
+            return [
+                "pom.xml",
+                "src/main/java/com/example/demo/DemoApplication.java",
+                "src/main/java/com/example/demo/HealthController.java",
+                "src/test/java/com/example/demo/HealthControllerTest.java",
+            ]
         if "No module named 'app'" in combined or 'No module named "app"' in combined:
             return ["tests/test_app.py", "app.py"]
         if "requirements" in combined or "ModuleNotFoundError" in combined:

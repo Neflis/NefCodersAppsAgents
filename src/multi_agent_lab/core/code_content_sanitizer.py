@@ -9,7 +9,7 @@ from pathlib import Path
 class CodeContentSanitizer:
     """Remove markdown fences from code-like files while preserving README markdown."""
 
-    code_extensions = {".py", ".json", ".txt"}
+    code_extensions = {".py", ".java", ".json", ".xml", ".txt"}
 
     def __init__(self) -> None:
         self.sanitized_files_count = 0
@@ -24,7 +24,7 @@ class CodeContentSanitizer:
         stripped_lines = [
             line
             for line in lines
-            if not re.match(r"^\s*```(?:python|py|json|txt)?\s*$", line, re.I)
+            if not re.match(r"^\s*```(?:python|py|java|xml|json|txt)?\s*$", line, re.I)
         ]
         stripped = "\n".join(stripped_lines)
         if content.endswith("\n"):

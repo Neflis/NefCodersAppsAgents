@@ -205,6 +205,11 @@ class CoderAgent(BaseAgent):
             "python_task_cli",
             "python_cli_tests",
             "python_cli_readme",
+            "spring_boot_pom",
+            "spring_boot_application",
+            "spring_boot_health_controller",
+            "spring_boot_health_test",
+            "spring_boot_readme",
         }
         return target_path in flask_files | cli_files or artifact in stable_artifacts
 
@@ -297,6 +302,8 @@ class CoderAgent(BaseAgent):
             return FixStrategy.PATCH_EXISTING_FILE
         if failure_type == "FlaskRouteError":
             return FixStrategy.FIX_ROUTE
+        if failure_type.startswith("Maven") or failure_type.startswith("Java"):
+            return FixStrategy.FIX_MAVEN_COMPILATION
         if target_path.startswith("tests/"):
             return FixStrategy.FIX_TEST
         if failure_type in {"AttributeError", "NameError"}:
@@ -340,6 +347,8 @@ class CoderAgent(BaseAgent):
             return self._direct_strip_fence_fix(target_path)
         if strategy == FixStrategy.FIX_LOCAL_MODULE_IMPORT:
             return self._direct_local_import_fix(target_path)
+        if strategy == FixStrategy.FIX_MAVEN_COMPILATION:
+            return self._mock_file_content("Fix Maven project", target_path, "")
         if strategy == FixStrategy.ADD_MISSING_DEPENDENCY or target_path == "requirements.txt":
             return "Flask>=3.0\n"
         if target_path == "README.md" or "README" in based_on_error:
@@ -406,6 +415,20 @@ class CoderAgent(BaseAgent):
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
+        if artifact == "spring_boot_pom" or target_path == "pom.xml":
+            return self._spring_boot_pom_content()
+        if artifact == "spring_boot_application" or target_path.endswith("DemoApplication.java"):
+            return self._spring_boot_application_content()
+        if artifact == "spring_boot_health_controller" or target_path.endswith(
+            "HealthController.java"
+        ):
+            return self._spring_boot_controller_content()
+        if artifact == "spring_boot_health_test" or target_path.endswith(
+            "HealthControllerTest.java"
+        ):
+            return self._spring_boot_test_content()
+        if artifact == "spring_boot_readme":
+            return self._spring_boot_readme_content()
         if artifact == "cli_requirements":
             return "pytest\n"
         if target_path == "requirements.txt":
@@ -637,6 +660,154 @@ class CoderAgent(BaseAgent):
                 "",
                 "if __name__ == '__main__':",
                 "    raise SystemExit(main())",
+                "",
+            ]
+        )
+
+    def _spring_boot_pom_content(self) -> str:
+        """Return a stable Spring Boot 3 Maven pom."""
+        return "\n".join(
+            [
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                '<project xmlns="http://maven.apache.org/POM/4.0.0"',
+                '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+                '         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 '
+                'https://maven.apache.org/xsd/maven-4.0.0.xsd">',
+                "    <modelVersion>4.0.0</modelVersion>",
+                "    <parent>",
+                "        <groupId>org.springframework.boot</groupId>",
+                "        <artifactId>spring-boot-starter-parent</artifactId>",
+                "        <version>3.3.5</version>",
+                "        <relativePath/>",
+                "    </parent>",
+                "    <groupId>com.example</groupId>",
+                "    <artifactId>demo</artifactId>",
+                "    <version>0.0.1-SNAPSHOT</version>",
+                "    <name>demo</name>",
+                "    <description>Minimal Spring Boot health API</description>",
+                "    <properties>",
+                "        <java.version>17</java.version>",
+                "    </properties>",
+                "    <dependencies>",
+                "        <dependency>",
+                "            <groupId>org.springframework.boot</groupId>",
+                "            <artifactId>spring-boot-starter-web</artifactId>",
+                "        </dependency>",
+                "        <dependency>",
+                "            <groupId>org.springframework.boot</groupId>",
+                "            <artifactId>spring-boot-starter-test</artifactId>",
+                "            <scope>test</scope>",
+                "        </dependency>",
+                "    </dependencies>",
+                "    <build>",
+                "        <plugins>",
+                "            <plugin>",
+                "                <groupId>org.springframework.boot</groupId>",
+                "                <artifactId>spring-boot-maven-plugin</artifactId>",
+                "            </plugin>",
+                "        </plugins>",
+                "    </build>",
+                "</project>",
+                "",
+            ]
+        )
+
+    def _spring_boot_application_content(self) -> str:
+        """Return the stable Spring Boot application class."""
+        return "\n".join(
+            [
+                "package com.example.demo;",
+                "",
+                "import org.springframework.boot.SpringApplication;",
+                "import org.springframework.boot.autoconfigure.SpringBootApplication;",
+                "",
+                "@SpringBootApplication",
+                "public class DemoApplication {",
+                "",
+                "    public static void main(String[] args) {",
+                "        SpringApplication.run(DemoApplication.class, args);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_controller_content(self) -> str:
+        """Return the stable health controller."""
+        return "\n".join(
+            [
+                "package com.example.demo;",
+                "",
+                "import org.springframework.web.bind.annotation.GetMapping;",
+                "import org.springframework.web.bind.annotation.RestController;",
+                "",
+                "@RestController",
+                "public class HealthController {",
+                "",
+                '    @GetMapping("/health")',
+                "    public String health() {",
+                '        return "OK";',
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_test_content(self) -> str:
+        """Return the stable MockMvc health test."""
+        return "\n".join(
+            [
+                "package com.example.demo;",
+                "",
+                "import org.junit.jupiter.api.Test;",
+                "import org.springframework.beans.factory.annotation.Autowired;",
+                "import org.springframework.boot.test.autoconfigure.web.servlet."
+                "AutoConfigureMockMvc;",
+                "import org.springframework.boot.test.context.SpringBootTest;",
+                "import org.springframework.test.web.servlet.MockMvc;",
+                "",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.get;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.content;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.status;",
+                "",
+                "@SpringBootTest",
+                "@AutoConfigureMockMvc",
+                "class HealthControllerTest {",
+                "",
+                "    @Autowired",
+                "    private MockMvc mockMvc;",
+                "",
+                "    @Test",
+                "    void healthReturnsOk() throws Exception {",
+                '        mockMvc.perform(get("/health"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(content().string("OK"));',
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _spring_boot_readme_content(self) -> str:
+        """Return README content for the minimal Spring Boot API."""
+        return "\n".join(
+            [
+                "# Spring Boot Health API",
+                "",
+                "API Spring Boot 3 minima con Java 17.",
+                "",
+                "## Endpoint",
+                "",
+                "- `GET /health` devuelve `OK`.",
+                "",
+                "## Tests",
+                "",
+                "Ejecuta `mvn test` dentro del workspace.",
+                "",
+                "Requiere Java 17 y Maven instalados.",
                 "",
             ]
         )

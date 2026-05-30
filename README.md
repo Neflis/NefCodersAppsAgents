@@ -140,6 +140,24 @@ requirements.txt
 README.md
 ```
 
+Ejecutar el baseline Spring Boot minimo:
+
+```powershell
+python -m multi_agent_lab run --goal "Crea una API Spring Boot minima con tests basicos" --mock
+```
+
+Resultado esperado en `workspace/`:
+
+```text
+pom.xml
+src/main/java/com/example/demo/DemoApplication.java
+src/main/java/com/example/demo/HealthController.java
+src/test/java/com/example/demo/HealthControllerTest.java
+README.md
+```
+
+Si usas `--allow-execution` y el workspace contiene `pom.xml`, `TesterExecutionAgent` ejecuta `mvn test` mediante la whitelist estricta. La ejecucion real requiere Maven y Java 17 instalados en la maquina.
+
 Ejecutar un objetivo con Ollama real:
 
 ```powershell
@@ -191,7 +209,7 @@ La capa de seguridad esta separada en dos piezas:
 
 Limites actuales:
 
-- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`.
+- Extensiones permitidas: `.py`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.xml`, `.java`.
 - Tamano maximo por archivo: 1 MB.
 - No hay borrado de archivos.
 - No hay ejecucion de comandos salvo que uses `--allow-execution`.
@@ -214,6 +232,7 @@ Comandos permitidos inicialmente:
 python app.py
 pytest
 pip check
+mvn test
 ```
 
 Comandos bloqueados:
@@ -225,6 +244,8 @@ cmd, powershell, bash, curl, wget, rm, del, git, npm, docker
 La ejecucion se comunica por eventos: `TEST_EXECUTION_REQUESTED`, `TEST_EXECUTION_STARTED`, `TEST_EXECUTION_PASSED` y `TEST_EXECUTION_FAILED`. Si falla, el resultado incluye salida truncada y feedback sobre imports faltantes, errores de sintaxis o timeout. El coordinator mantiene un maximo de 2 retries automaticos antes de bloquear la tarea.
 
 `pytest` se ejecuta con `cwd=workspace` y `PYTHONPATH` apuntando al workspace para que proyectos Python simples puedan importar modulos locales como `app.py` desde `tests/test_app.py`.
+
+Para proyectos Maven, solo se permite `mvn test`. Otros goals como `mvn clean install`, `mvn package` o cualquier combinacion adicional quedan bloqueados por `CommandTool`.
 
 ## Auto-fix tras fallos
 
@@ -271,10 +292,13 @@ Estrategias actuales:
 - `rewrite_function`
 - `strip_markdown_fences`
 - `fix_local_module_import`
+- `fix_maven_compilation`
 
 `CoderAgent` usa ese contexto para leer archivos relacionados y publicar `FIX_PROPOSED` con `fix_strategy`, `fix_reasoning`, `diff_summary`, `based_on_error` y un hash simple del contenido. `ProjectMemory` guarda errores, fixes aplicados y hashes de fixes para evitar repetir exactamente el mismo cambio.
 
 `fix_local_module_import` corrige fallos como `ModuleNotFoundError: No module named 'app'` alineando `tests/test_app.py` con los simbolos reales exportados por `app.py`: usa `from app import app` si existe `app = Flask(...)`, usa `create_app` solo si existe, y no inventa imports como `db`. Para modulos locales como `app`, `todo` o `models`, el target del fix son archivos Python (`tests/test_app.py`, `app.py`), no `requirements.txt`. Si se intenta aplicar un fix local a `requirements.txt`, `FileAgent` lo rechaza como `wrong_target_fix`.
+
+Para proyectos Spring Boot minimos, el baseline determinista crea un `pom.xml` Spring Boot 3 con Java 17, `DemoApplication`, `HealthController` con `GET /health` y un test `MockMvc` que valida estado 200 y body `OK`. `FailureAnalysisService` reconoce errores Maven basicos como fallos de compilacion, tests fallidos, dependencias ausentes, version Java incorrecta y paquetes o clases no encontrados.
 
 Limites actuales:
 

@@ -114,7 +114,10 @@ class AgentRuntime:
         graph_store = TaskGraphStore(store)
         workspace = WorkspaceManager(self.workspace_path)
         file_tool = FileTool(workspace)
-        command_tool = CommandTool(workspace)
+        command_tool = CommandTool(
+            workspace,
+            timeout_seconds=min(max(self.timeout_seconds, 10.0), 120.0),
+        )
         file_awareness = FileAwarenessService(file_tool)
         path_normalizer = FilePathNormalizer(workspace.root)
         content_sanitizer = CodeContentSanitizer()

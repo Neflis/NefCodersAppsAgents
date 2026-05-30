@@ -94,6 +94,8 @@ class PlannerAgent(BaseAgent):
             return self._build_flask_api_graph(graph, allow_execution)
         if self._is_python_cli_task_goal(goal_title):
             return self._build_python_cli_graph(graph, allow_execution)
+        if self._is_spring_boot_goal(goal_title):
+            return self._build_spring_boot_graph(graph, allow_execution)
 
         task_specs = (
             decision.content
@@ -139,6 +141,118 @@ class PlannerAgent(BaseAgent):
                 required_capability=Capability.TESTING_MOCK.value,
                 payload={"path": target_path},
                 dependencies={write.id},
+                priority=4,
+            )
+        )
+        return graph
+
+    def _build_spring_boot_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
+        """Create a deterministic Spring Boot minimal API graph."""
+        pom = graph.add_task(
+            TaskNode(
+                title="Crear pom.xml",
+                description="Configurar Spring Boot 3 con Java 17.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "pom.xml", "artifact": "spring_boot_pom"},
+                priority=10,
+            )
+        )
+        app = graph.add_task(
+            TaskNode(
+                title="Crear DemoApplication.java",
+                description="Crear clase principal Spring Boot.",
+                required_capability=Capability.CODING.value,
+                payload={
+                    "path": "src/main/java/com/example/demo/DemoApplication.java",
+                    "artifact": "spring_boot_application",
+                },
+                dependencies={pom.id},
+                priority=9,
+            )
+        )
+        controller = graph.add_task(
+            TaskNode(
+                title="Crear HealthController.java",
+                description="Crear endpoint GET /health.",
+                required_capability=Capability.CODING.value,
+                payload={
+                    "path": "src/main/java/com/example/demo/HealthController.java",
+                    "artifact": "spring_boot_health_controller",
+                },
+                dependencies={app.id},
+                priority=8,
+            )
+        )
+        tests = graph.add_task(
+            TaskNode(
+                title="Crear HealthControllerTest.java",
+                description="Crear test MockMvc para GET /health.",
+                required_capability=Capability.CODING.value,
+                payload={
+                    "path": "src/test/java/com/example/demo/HealthControllerTest.java",
+                    "artifact": "spring_boot_health_test",
+                },
+                dependencies={controller.id},
+                priority=7,
+            )
+        )
+        readme = graph.add_task(
+            TaskNode(
+                title="Crear README.md",
+                description="Documentar API Spring Boot minima.",
+                required_capability=Capability.CODING.value,
+                payload={"path": "README.md", "artifact": "spring_boot_readme"},
+                dependencies={tests.id},
+                priority=6,
+            )
+        )
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar coherencia final Spring Boot",
+                description="Validar pom, clases Java, test y README.",
+                required_capability=Capability.REVIEWING.value,
+                payload={
+                    "project_review": True,
+                    "paths": [
+                        "pom.xml",
+                        "src/main/java/com/example/demo/DemoApplication.java",
+                        "src/main/java/com/example/demo/HealthController.java",
+                        "src/test/java/com/example/demo/HealthControllerTest.java",
+                        "README.md",
+                    ],
+                },
+                dependencies={readme.id},
+                priority=5,
+            )
+        )
+        if allow_execution:
+            graph.add_task(
+                TaskNode(
+                    title="Ejecutar validacion Maven",
+                    description="Ejecutar mvn test dentro del workspace con whitelist estricta.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "mvn", "args": ["test"]},
+                    dependencies={review.id},
+                    priority=4,
+                )
+            )
+            return graph
+
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia de archivos Spring Boot",
+                description="Comprobar que los archivos finales existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={
+                    "paths": [
+                        "pom.xml",
+                        "src/main/java/com/example/demo/DemoApplication.java",
+                        "src/main/java/com/example/demo/HealthController.java",
+                        "src/test/java/com/example/demo/HealthControllerTest.java",
+                        "README.md",
+                    ]
+                },
+                dependencies={review.id},
                 priority=4,
             )
         )
@@ -402,6 +516,10 @@ class PlannerAgent(BaseAgent):
         """Return whether a goal asks for a Python task CLI."""
         lowered = goal_title.lower()
         return "cli" in lowered and "python" in lowered and "tareas" in lowered
+
+    def _is_spring_boot_goal(self, goal_title: str) -> bool:
+        """Return whether a goal asks for a Spring Boot project."""
+        return "spring boot" in goal_title.lower()
 
     def _build_graph_from_specs(
         self,

@@ -178,6 +178,119 @@ async def test_python_cli_execution_targets_cli_tests(tmp_path: Path) -> None:
     assert summary.execution_failure_count == 0
 
 
+async def test_spring_boot_mock_generates_minimal_baseline(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Crea una API Spring Boot minima con tests basicos",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    pom = (workspace / "pom.xml").read_text(encoding="utf-8")
+    application = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "DemoApplication.java"
+    ).read_text(encoding="utf-8")
+    controller = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "HealthController.java"
+    ).read_text(encoding="utf-8")
+    tests = (
+        workspace
+        / "src"
+        / "test"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "HealthControllerTest.java"
+    ).read_text(encoding="utf-8")
+    readme = (workspace / "README.md").read_text(encoding="utf-8")
+    assert summary.status == "completed"
+    assert sorted(summary.files_created) == [
+        "README.md",
+        "pom.xml",
+        "src/main/java/com/example/demo/DemoApplication.java",
+        "src/main/java/com/example/demo/HealthController.java",
+        "src/test/java/com/example/demo/HealthControllerTest.java",
+    ]
+    assert "spring-boot-starter-parent" in pom
+    assert "<java.version>17</java.version>" in pom
+    assert "spring-boot-starter-web" in pom
+    assert "spring-boot-starter-test" in pom
+    assert "spring-boot-starter-data-jpa" not in pom
+    assert "lombok" not in pom.lower()
+    assert "@SpringBootApplication" in application
+    assert '@GetMapping("/health")' in controller
+    assert 'return "OK";' in controller
+    assert "MockMvc" in tests
+    assert "status().isOk()" in tests
+    assert 'content().string("OK")' in tests
+    assert "Spring Boot" in readme
+    assert "/health" in readme
+
+
+async def test_spring_boot_mock_workflow_completes(tmp_path: Path) -> None:
+    runtime = AgentRuntime(
+        "Crea una API spring boot minima con tests basicos",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=10,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert "pom.xml" in summary.files_created
+
+
+def test_reviewer_validates_spring_boot_project() -> None:
+    reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
+
+    feedback = reviewer._project_feedback(
+        {
+            "pom.xml": (
+                "<project><parent><artifactId>spring-boot-starter-parent</artifactId>"
+                "</parent><properties><java.version>17</java.version></properties>"
+                "<dependency><artifactId>spring-boot-starter-web</artifactId></dependency>"
+                "<dependency><artifactId>spring-boot-starter-test</artifactId></dependency>"
+                "</project>"
+            ),
+            "src/main/java/com/example/demo/DemoApplication.java": (
+                "@SpringBootApplication class DemoApplication {}"
+            ),
+            "src/main/java/com/example/demo/HealthController.java": (
+                '@GetMapping("/health") String health() { return "OK"; }'
+            ),
+            "src/test/java/com/example/demo/HealthControllerTest.java": (
+                'MockMvc mockMvc; status().isOk(); content().string("OK");'
+            ),
+            "README.md": "Spring Boot API con GET /health.",
+        }
+    )
+
+    assert feedback == []
+
+
+def test_maven_fix_keeps_spring_boot_pom() -> None:
+    from multi_agent_lab.agents.coder_agent import CoderAgent
+    from multi_agent_lab.core.failure_analysis import FixStrategy
+
+    coder = CoderAgent("coder", bus=None)  # type: ignore[arg-type]
+
+    content = coder._mock_fix_content(
+        "pom.xml",
+        "Could not transfer artifact spring-boot-starter-parent",
+        FixStrategy.FIX_MAVEN_COMPILATION,
+    )
+
+    assert content.startswith("<?xml")
+    assert "spring-boot-starter-parent" in content
+
+
 def test_reviewer_detects_flask_import_without_requirement() -> None:
     reviewer = ReviewerAgent("reviewer", None, None)  # type: ignore[arg-type]
 

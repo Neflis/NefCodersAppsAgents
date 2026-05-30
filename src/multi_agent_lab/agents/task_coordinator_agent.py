@@ -232,6 +232,8 @@ class TaskCoordinatorAgent(BaseAgent):
             return FixStrategy.FIX_LOCAL_MODULE_IMPORT.value
         if failure_type == "ModuleNotFoundError":
             return FixStrategy.ADD_MISSING_DEPENDENCY.value
+        if failure_type.startswith("Maven") or failure_type.startswith("Java"):
+            return FixStrategy.FIX_MAVEN_COMPILATION.value
         return ""
 
     def _target_files(
