@@ -9,6 +9,7 @@ from multi_agent_lab.core.agent_event_logger import AgentEventLogger
 from multi_agent_lab.core.capability import Capability
 from multi_agent_lab.core.message import EventType, Message
 from multi_agent_lab.core.message_bus import MessageBus
+from multi_agent_lab.core.project_spec import ProjectSpec
 from multi_agent_lab.core.task_graph import Goal, TaskGraph, TaskNode
 from multi_agent_lab.core.task_graph_store import TaskGraphStore
 from multi_agent_lab.llm.context_builder import AgentContextBuilder
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class PlannerAgent(BaseAgent):
     """Agent that listens for goals and creates a dynamic task graph."""
 
-    subscribed_events = (EventType.GOAL_SUBMITTED,)
+    subscribed_events = (EventType.GOAL_SUBMITTED, EventType.SPEC_APPROVED)
     capabilities = (Capability.PLANNING.value,)
 
     def __init__(
@@ -42,11 +43,16 @@ class PlannerAgent(BaseAgent):
 
     async def handle_message(self, message: Message) -> None:
         """Decompose a goal into dependent tasks."""
+        if message.type == EventType.GOAL_SUBMITTED and bool(
+            message.metadata.get("require_spec", False)
+        ):
+            return
         goal_title = str(
             message.content.get("goal", "Crear una pequena documentacion README para una app TODO")
         )
         target_path = str(message.content.get("path", "README.md"))
         allow_execution = bool(message.metadata.get("allow_execution", False))
+        spec = self._project_spec_from_message(message)
         decision = await self._decide(message)
         graph = self._build_readme_graph(
             goal_title,
@@ -54,6 +60,7 @@ class PlannerAgent(BaseAgent):
             message.correlation_id or message.id,
             decision,
             allow_execution,
+            spec,
         )
         self.graph_store.add(graph)
         logger.info("Objetivo descompuesto correlation=%s", graph.goal.correlation_id)
@@ -63,6 +70,7 @@ class PlannerAgent(BaseAgent):
             {
                 "goal_id": graph.goal.id,
                 "goal": graph.goal.title,
+                "project_spec": spec.to_dict() if spec is not None else None,
                 "tasks": [task.to_dict() for task in graph.nodes.values()],
             },
             source=message,
@@ -87,9 +95,10 @@ class PlannerAgent(BaseAgent):
         correlation_id: str,
         decision: LLMDecision | None = None,
         allow_execution: bool = False,
+        project_spec: ProjectSpec | None = None,
     ) -> TaskGraph:
         """Create the README demo graph."""
-        graph = TaskGraph(Goal(goal_title, correlation_id))
+        graph = TaskGraph(Goal(self._goal_title(goal_title, project_spec), correlation_id))
         if self._is_flask_api_goal(goal_title):
             return self._build_flask_api_graph(graph, allow_execution)
         if self._is_python_cli_task_goal(goal_title):
@@ -149,6 +158,19 @@ class PlannerAgent(BaseAgent):
             )
         )
         return graph
+
+    def _project_spec_from_message(self, message: Message) -> ProjectSpec | None:
+        """Return a ProjectSpec carried by SPEC_APPROVED, if present."""
+        raw_spec = message.content.get("project_spec")
+        if isinstance(raw_spec, dict):
+            return ProjectSpec.from_dict(raw_spec)
+        return None
+
+    def _goal_title(self, goal_title: str, project_spec: ProjectSpec | None) -> str:
+        """Include spec identity in the goal title when available."""
+        if project_spec is None:
+            return goal_title
+        return f"{project_spec.app_name}: {goal_title}"
 
     def _build_angular_minimal_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
         """Create a deterministic Angular standalone app graph."""

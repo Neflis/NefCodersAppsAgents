@@ -94,6 +94,7 @@ class FileTool:
                     "__pycache__",
                     ".traces",
                     ".memory",
+                    ".spec",
                     "target",
                     "node_modules",
                     "dist",

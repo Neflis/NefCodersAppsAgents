@@ -74,6 +74,7 @@ def print_summary(summary: RuntimeSummary) -> None:
     print(f"Tareas completadas: {summary.tasks_completed}")
     print(f"Tareas fallidas: {summary.tasks_failed}")
     print(f"Archivos creados: {', '.join(summary.files_created) or '(ninguno)'}")
+    print(f"Spec generada: {summary.spec_generated}")
     print(f"Duracion: {summary.duration_seconds:.2f}s")
     print(f"Correlation ID: {summary.correlation_id}")
     print(

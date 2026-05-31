@@ -10,6 +10,7 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Agentes desacoplados que escuchan eventos y publican nuevos eventos.
 - `correlation_id`, `causation_id` y `metadata` en cada mensaje.
 - `TaskGraph` para descomponer objetivos en tareas con dependencias.
+- `ProjectSpec` para convertir objetivos vagos en una especificacion funcional antes de planificar.
 - Modelo de capabilities para que los trabajadores reclamen tareas compatibles.
 - Persistencia SQLite para `messages`, `tasks` y `agent_events`.
 - Persistencia de snapshots del grafo en `task_graphs`.
@@ -24,6 +25,28 @@ La fase actual demuestra una red multiagente autonoma basada en eventos y un gra
 - Salidas LLM JSON robustas con extraccion, reparacion simple, schemas y trazas en `workspace/.traces/`.
 
 La ejecucion de comandos reales esta desactivada por defecto. Cuando se activa explicitamente, solo se permite una whitelist estricta dentro del workspace. No se usa Docker, no se usa git automatico y no se permite borrado de archivos.
+
+## Goal-to-Spec
+
+Antes de que `PlannerAgent` descomponga un objetivo, `SpecAgent` convierte el texto del usuario en un `ProjectSpec` estructurado y lo guarda como JSON en:
+
+```text
+workspace/.spec/project_spec.json
+```
+
+Flujo:
+
+```text
+GOAL_SUBMITTED
+  -> SPEC_REQUESTED
+  -> SPEC_GENERATED
+  -> SPEC_APPROVED
+  -> GOAL_DECOMPOSED
+```
+
+Para objetivos vagos no se pregunta al usuario todavia: se asume un MVP razonable. Por ejemplo, "Hazme una web para registrar mis ventas de impresion 3D" genera entidades `Product`, `Customer`, `Sale`, `SaleItem` y `Payment`, pantallas como `Dashboard`, `Products`, `Customers`, `Sales` y `New Sale`, y validaciones como `quantity > 0` y `payment status required`.
+
+Esta fase no genera todavia una aplicacion fullstack completa para specs genericas; solo prepara la especificacion y la integra con el planner.
 
 ## Requisitos
 

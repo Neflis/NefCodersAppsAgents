@@ -14,6 +14,7 @@ from multi_agent_lab.agents.dependency_installer_agent import DependencyInstalle
 from multi_agent_lab.agents.file_agent import FileAgent
 from multi_agent_lab.agents.planner_agent import PlannerAgent
 from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
+from multi_agent_lab.agents.spec_agent import SpecAgent
 from multi_agent_lab.agents.supervisor_agent import SupervisorAgent
 from multi_agent_lab.agents.task_coordinator_agent import TaskCoordinatorAgent
 from multi_agent_lab.agents.tester_agent import TesterAgent
@@ -73,6 +74,7 @@ class RuntimeSummary:
     dependency_install_failures: int = 0
     patches_applied: int = 0
     patches_failed: int = 0
+    spec_generated: bool = False
     details: dict[str, object] = field(default_factory=dict)
 
 
@@ -165,6 +167,7 @@ class AgentRuntime:
                 "workspace": self.workspace_path,
                 "mock": self.use_mock_llm,
                 "allow_execution": self.allow_execution,
+                "require_spec": True,
             },
         )
 
@@ -268,6 +271,7 @@ class AgentRuntime:
             trace_recorder,
         )
         agents: list[BaseAgent] = [
+            SpecAgent("spec_agent", bus, event_logger),
             PlannerAgent("planner", bus, graph_store, event_logger, planner_llm, context_builder),
             CoderAgent("coder", bus, event_logger, coder_llm, context_builder),
             ReviewerAgent(
@@ -415,6 +419,7 @@ class AgentRuntime:
             ),
             patches_applied=self._event_count(noise_reducer, EventType.PATCH_APPLIED),
             patches_failed=self._event_count(noise_reducer, EventType.PATCH_FAILED),
+            spec_generated=self._event_count(noise_reducer, EventType.SPEC_GENERATED) > 0,
             details=dict(terminal_event.content or {}),
         )
 
