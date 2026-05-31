@@ -99,6 +99,8 @@ class PlannerAgent(BaseAgent):
     ) -> TaskGraph:
         """Create the README demo graph."""
         graph = TaskGraph(Goal(self._goal_title(goal_title, project_spec), correlation_id))
+        if self._is_sales_backend_spec(project_spec):
+            return self._build_sales_backend_graph(graph, allow_execution)
         if self._is_flask_api_goal(goal_title):
             return self._build_flask_api_graph(graph, allow_execution)
         if self._is_python_cli_task_goal(goal_title):
@@ -171,6 +173,137 @@ class PlannerAgent(BaseAgent):
         if project_spec is None:
             return goal_title
         return f"{project_spec.app_name}: {goal_title}"
+
+    def _is_sales_backend_spec(self, project_spec: ProjectSpec | None) -> bool:
+        """Return whether a spec describes the 3D printing sales MVP."""
+        if project_spec is None:
+            return False
+        required_entities = {"Product", "Customer", "Sale", "SaleItem", "Payment"}
+        return required_entities.issubset(set(project_spec.entities)) and (
+            "venta" in project_spec.domain_summary.lower()
+            or "sales" in project_spec.app_name.lower()
+        )
+
+    def _build_sales_backend_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
+        """Create a deterministic Spring Boot backend for the sales ProjectSpec."""
+        files = [
+            ("Crear pom.xml", "pom.xml", "sales_backend_pom"),
+            (
+                "Crear DemoApplication.java",
+                "src/main/java/com/example/demo/DemoApplication.java",
+                "spring_boot_application",
+            ),
+            (
+                "Crear PaymentStatus.java",
+                "src/main/java/com/example/demo/sales/PaymentStatus.java",
+                "sales_backend_payment_status",
+            ),
+            (
+                "Crear Product.java",
+                "src/main/java/com/example/demo/sales/Product.java",
+                "sales_backend_product",
+            ),
+            (
+                "Crear Customer.java",
+                "src/main/java/com/example/demo/sales/Customer.java",
+                "sales_backend_customer",
+            ),
+            (
+                "Crear SaleItem.java",
+                "src/main/java/com/example/demo/sales/SaleItem.java",
+                "sales_backend_sale_item",
+            ),
+            (
+                "Crear Sale.java",
+                "src/main/java/com/example/demo/sales/Sale.java",
+                "sales_backend_sale",
+            ),
+            (
+                "Crear ProductService.java",
+                "src/main/java/com/example/demo/sales/ProductService.java",
+                "sales_backend_product_service",
+            ),
+            (
+                "Crear CustomerService.java",
+                "src/main/java/com/example/demo/sales/CustomerService.java",
+                "sales_backend_customer_service",
+            ),
+            (
+                "Crear SaleService.java",
+                "src/main/java/com/example/demo/sales/SaleService.java",
+                "sales_backend_sale_service",
+            ),
+            (
+                "Crear ProductController.java",
+                "src/main/java/com/example/demo/sales/ProductController.java",
+                "sales_backend_product_controller",
+            ),
+            (
+                "Crear CustomerController.java",
+                "src/main/java/com/example/demo/sales/CustomerController.java",
+                "sales_backend_customer_controller",
+            ),
+            (
+                "Crear SaleController.java",
+                "src/main/java/com/example/demo/sales/SaleController.java",
+                "sales_backend_sale_controller",
+            ),
+            (
+                "Crear SalesBackendTest.java",
+                "src/test/java/com/example/demo/sales/SalesBackendTest.java",
+                "sales_backend_test",
+            ),
+            ("Crear README.md", "README.md", "sales_backend_readme"),
+        ]
+        previous_id: str | None = None
+        for index, (title, path, artifact) in enumerate(files):
+            task = graph.add_task(
+                TaskNode(
+                    title=title,
+                    description="Generar backend Spring Boot MVP basado en ProjectSpec.",
+                    required_capability=Capability.CODING.value,
+                    payload={"path": path, "artifact": artifact},
+                    dependencies={previous_id} if previous_id else set(),
+                    priority=20 - index,
+                )
+            )
+            previous_id = task.id
+
+        paths = [path for _, path, _ in files]
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar backend ventas Spring Boot",
+                description="Validar entidades, controllers, servicios, tests y README.",
+                required_capability=Capability.REVIEWING.value,
+                payload={"project_review": True, "paths": paths},
+                dependencies={previous_id} if previous_id else set(),
+                priority=4,
+            )
+        )
+        if allow_execution:
+            graph.add_task(
+                TaskNode(
+                    title="Ejecutar validacion Maven",
+                    description="Ejecutar mvn test dentro del workspace con whitelist estricta.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "mvn", "args": ["test"]},
+                    dependencies={review.id},
+                    priority=3,
+                )
+            )
+            return graph
+
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia backend ventas",
+                description="Comprobar que los archivos del backend ventas existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={"paths": paths},
+                dependencies={review.id},
+                priority=3,
+            )
+        )
+        return graph
 
     def _build_angular_minimal_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
         """Create a deterministic Angular standalone app graph."""

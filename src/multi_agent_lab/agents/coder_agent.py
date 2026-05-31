@@ -256,6 +256,20 @@ class CoderAgent(BaseAgent):
             "angular_main",
             "angular_app_component",
             "angular_app_template",
+            "sales_backend_pom",
+            "sales_backend_payment_status",
+            "sales_backend_product",
+            "sales_backend_customer",
+            "sales_backend_sale_item",
+            "sales_backend_sale",
+            "sales_backend_product_service",
+            "sales_backend_customer_service",
+            "sales_backend_sale_service",
+            "sales_backend_product_controller",
+            "sales_backend_customer_controller",
+            "sales_backend_sale_controller",
+            "sales_backend_test",
+            "sales_backend_readme",
         }
         return target_path in flask_files | cli_files or artifact in stable_artifacts
 
@@ -483,6 +497,8 @@ class CoderAgent(BaseAgent):
 
     def _mock_file_content(self, title: str, target_path: str, artifact: str) -> str:
         """Return deterministic content by artifact type."""
+        if artifact == "sales_backend_pom":
+            return self._spring_boot_pom_content("Spring Boot 3D printing sales backend")
         if artifact == "spring_boot_crud_pom":
             return self._spring_boot_pom_content("Spring Boot user CRUD API")
         if artifact == "spring_boot_pom" or target_path == "pom.xml":
@@ -511,6 +527,32 @@ class CoderAgent(BaseAgent):
             return self._spring_boot_test_content()
         if artifact == "spring_boot_readme":
             return self._spring_boot_readme_content()
+        if artifact == "sales_backend_payment_status":
+            return self._sales_payment_status_content()
+        if artifact == "sales_backend_product":
+            return self._sales_product_content()
+        if artifact == "sales_backend_customer":
+            return self._sales_customer_content()
+        if artifact == "sales_backend_sale_item":
+            return self._sales_sale_item_content()
+        if artifact == "sales_backend_sale":
+            return self._sales_sale_content()
+        if artifact == "sales_backend_product_service":
+            return self._sales_product_service_content()
+        if artifact == "sales_backend_customer_service":
+            return self._sales_customer_service_content()
+        if artifact == "sales_backend_sale_service":
+            return self._sales_sale_service_content()
+        if artifact == "sales_backend_product_controller":
+            return self._sales_product_controller_content()
+        if artifact == "sales_backend_customer_controller":
+            return self._sales_customer_controller_content()
+        if artifact == "sales_backend_sale_controller":
+            return self._sales_sale_controller_content()
+        if artifact == "sales_backend_test":
+            return self._sales_backend_test_content()
+        if artifact == "sales_backend_readme":
+            return self._sales_backend_readme_content()
         if artifact == "angular_package_json" or target_path == "package.json":
             return self._angular_package_json_content()
         if artifact == "angular_json" or target_path == "angular.json":
@@ -889,6 +931,503 @@ class CoderAgent(BaseAgent):
     def _angular_template_content(self) -> str:
         """Return the minimal Angular component template."""
         return "<h1>Angular Works</h1>\n"
+
+    def _sales_payment_status_content(self) -> str:
+        """Return payment status enum for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "public enum PaymentStatus {",
+                "    PENDING,",
+                "    PARTIAL,",
+                "    PAID",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_product_content(self) -> str:
+        """Return Product record for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "public record Product(Long id, String name, double unitPrice) {",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_customer_content(self) -> str:
+        """Return Customer record for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "public record Customer(Long id, String name, String email) {",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_sale_item_content(self) -> str:
+        """Return SaleItem record for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "public record SaleItem(Long productId, int quantity, double unitPrice) {",
+                "",
+                "    public double lineTotal() {",
+                "        return quantity * unitPrice;",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_sale_content(self) -> str:
+        """Return Sale record for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.time.LocalDate;",
+                "import java.util.List;",
+                "",
+                "public record Sale(",
+                "        Long id,",
+                "        Long customerId,",
+                "        LocalDate saleDate,",
+                "        List<SaleItem> items,",
+                "        PaymentStatus paymentStatus,",
+                "        double total",
+                ") {",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_product_service_content(self) -> str:
+        """Return in-memory Product service."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.util.ArrayList;",
+                "import java.util.List;",
+                "import java.util.Map;",
+                "import java.util.concurrent.ConcurrentHashMap;",
+                "import java.util.concurrent.atomic.AtomicLong;",
+                "",
+                "import org.springframework.stereotype.Service;",
+                "",
+                "@Service",
+                "public class ProductService {",
+                "",
+                "    private final Map<Long, Product> products = new ConcurrentHashMap<>();",
+                "    private final AtomicLong nextId = new AtomicLong(1);",
+                "",
+                "    public List<Product> findAll() {",
+                "        return new ArrayList<>(products.values());",
+                "    }",
+                "",
+                "    public Product create(Product product) {",
+                "        Long id = nextId.getAndIncrement();",
+                "        Product created = new Product(id, product.name(), product.unitPrice());",
+                "        products.put(id, created);",
+                "        return created;",
+                "    }",
+                "",
+                "    public void clear() {",
+                "        products.clear();",
+                "        nextId.set(1);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_customer_service_content(self) -> str:
+        """Return in-memory Customer service."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.util.ArrayList;",
+                "import java.util.List;",
+                "import java.util.Map;",
+                "import java.util.concurrent.ConcurrentHashMap;",
+                "import java.util.concurrent.atomic.AtomicLong;",
+                "",
+                "import org.springframework.stereotype.Service;",
+                "",
+                "@Service",
+                "public class CustomerService {",
+                "",
+                "    private final Map<Long, Customer> customers = new ConcurrentHashMap<>();",
+                "    private final AtomicLong nextId = new AtomicLong(1);",
+                "",
+                "    public List<Customer> findAll() {",
+                "        return new ArrayList<>(customers.values());",
+                "    }",
+                "",
+                "    public Customer create(Customer customer) {",
+                "        Long id = nextId.getAndIncrement();",
+                "        Customer created = new Customer(id, customer.name(), customer.email());",
+                "        customers.put(id, created);",
+                "        return created;",
+                "    }",
+                "",
+                "    public void clear() {",
+                "        customers.clear();",
+                "        nextId.set(1);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_sale_service_content(self) -> str:
+        """Return in-memory Sale service with monthly summary."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.time.format.DateTimeFormatter;",
+                "import java.util.ArrayList;",
+                "import java.util.LinkedHashMap;",
+                "import java.util.List;",
+                "import java.util.Map;",
+                "import java.util.concurrent.ConcurrentHashMap;",
+                "import java.util.concurrent.atomic.AtomicLong;",
+                "import java.util.stream.Collectors;",
+                "",
+                "import org.springframework.stereotype.Service;",
+                "",
+                "@Service",
+                "public class SaleService {",
+                "",
+                "    private final Map<Long, Sale> sales = new ConcurrentHashMap<>();",
+                "    private final AtomicLong nextId = new AtomicLong(1);",
+                "    private final DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern(",
+                '            "yyyy-MM"',
+                "    );",
+                "",
+                "    public List<Sale> findAll() {",
+                "        return new ArrayList<>(sales.values());",
+                "    }",
+                "",
+                "    public Sale create(Sale sale) {",
+                "        Long id = nextId.getAndIncrement();",
+                "        double total = sale.items().stream()",
+                "                .mapToDouble(SaleItem::lineTotal)",
+                "                .sum();",
+                "        Sale created = new Sale(",
+                "                id,",
+                "                sale.customerId(),",
+                "                sale.saleDate(),",
+                "                sale.items(),",
+                "                sale.paymentStatus(),",
+                "                total",
+                "        );",
+                "        sales.put(id, created);",
+                "        return created;",
+                "    }",
+                "",
+                "    public Map<String, Double> monthlySummary() {",
+                "        return sales.values().stream()",
+                "                .collect(Collectors.groupingBy(",
+                "                        sale -> monthFormatter.format(sale.saleDate()),",
+                "                        LinkedHashMap::new,",
+                "                        Collectors.summingDouble(Sale::total)",
+                "                ));",
+                "    }",
+                "",
+                "    public void clear() {",
+                "        sales.clear();",
+                "        nextId.set(1);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_product_controller_content(self) -> str:
+        """Return Product controller for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.util.List;",
+                "",
+                "import org.springframework.http.HttpStatus;",
+                "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.web.bind.annotation.GetMapping;",
+                "import org.springframework.web.bind.annotation.PostMapping;",
+                "import org.springframework.web.bind.annotation.RequestBody;",
+                "import org.springframework.web.bind.annotation.RequestMapping;",
+                "import org.springframework.web.bind.annotation.RestController;",
+                "",
+                "@RestController",
+                '@RequestMapping("/products")',
+                "public class ProductController {",
+                "",
+                "    private final ProductService productService;",
+                "",
+                "    public ProductController(ProductService productService) {",
+                "        this.productService = productService;",
+                "    }",
+                "",
+                "    @GetMapping",
+                "    public List<Product> listProducts() {",
+                "        return productService.findAll();",
+                "    }",
+                "",
+                "    @PostMapping",
+                "    public ResponseEntity<Product> createProduct(@RequestBody Product product) {",
+                "        return ResponseEntity.status(HttpStatus.CREATED)",
+                "                .body(productService.create(product));",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_customer_controller_content(self) -> str:
+        """Return Customer controller for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.util.List;",
+                "",
+                "import org.springframework.http.HttpStatus;",
+                "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.web.bind.annotation.GetMapping;",
+                "import org.springframework.web.bind.annotation.PostMapping;",
+                "import org.springframework.web.bind.annotation.RequestBody;",
+                "import org.springframework.web.bind.annotation.RequestMapping;",
+                "import org.springframework.web.bind.annotation.RestController;",
+                "",
+                "@RestController",
+                '@RequestMapping("/customers")',
+                "public class CustomerController {",
+                "",
+                "    private final CustomerService customerService;",
+                "",
+                "    public CustomerController(CustomerService customerService) {",
+                "        this.customerService = customerService;",
+                "    }",
+                "",
+                "    @GetMapping",
+                "    public List<Customer> listCustomers() {",
+                "        return customerService.findAll();",
+                "    }",
+                "",
+                "    @PostMapping",
+                "    public ResponseEntity<Customer> createCustomer(",
+                "            @RequestBody Customer customer",
+                "    ) {",
+                "        return ResponseEntity.status(HttpStatus.CREATED)",
+                "                .body(customerService.create(customer));",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_sale_controller_content(self) -> str:
+        """Return Sale controller for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import java.util.List;",
+                "import java.util.Map;",
+                "",
+                "import org.springframework.http.HttpStatus;",
+                "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.web.bind.annotation.GetMapping;",
+                "import org.springframework.web.bind.annotation.PostMapping;",
+                "import org.springframework.web.bind.annotation.RequestBody;",
+                "import org.springframework.web.bind.annotation.RequestMapping;",
+                "import org.springframework.web.bind.annotation.RestController;",
+                "",
+                "@RestController",
+                '@RequestMapping("/sales")',
+                "public class SaleController {",
+                "",
+                "    private final SaleService saleService;",
+                "",
+                "    public SaleController(SaleService saleService) {",
+                "        this.saleService = saleService;",
+                "    }",
+                "",
+                "    @GetMapping",
+                "    public List<Sale> listSales() {",
+                "        return saleService.findAll();",
+                "    }",
+                "",
+                "    @PostMapping",
+                "    public ResponseEntity<Sale> createSale(@RequestBody Sale sale) {",
+                "        return ResponseEntity.status(HttpStatus.CREATED)",
+                "                .body(saleService.create(sale));",
+                "    }",
+                "",
+                '    @GetMapping("/monthly-summary")',
+                "    public Map<String, Double> monthlySummary() {",
+                "        return saleService.monthlySummary();",
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_backend_test_content(self) -> str:
+        """Return MockMvc tests for the sales backend."""
+        return "\n".join(
+            [
+                "package com.example.demo.sales;",
+                "",
+                "import org.junit.jupiter.api.BeforeEach;",
+                "import org.junit.jupiter.api.Test;",
+                "import org.springframework.beans.factory.annotation.Autowired;",
+                "import org.springframework.boot.test.autoconfigure.web.servlet."
+                "AutoConfigureMockMvc;",
+                "import org.springframework.boot.test.context.SpringBootTest;",
+                "import org.springframework.http.MediaType;",
+                "import org.springframework.test.web.servlet.MockMvc;",
+                "",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.get;",
+                "import static org.springframework.test.web.servlet.request."
+                "MockMvcRequestBuilders.post;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.content;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.jsonPath;",
+                "import static org.springframework.test.web.servlet.result."
+                "MockMvcResultMatchers.status;",
+                "",
+                "@SpringBootTest",
+                "@AutoConfigureMockMvc",
+                "class SalesBackendTest {",
+                "",
+                "    @Autowired",
+                "    private MockMvc mockMvc;",
+                "",
+                "    @Autowired",
+                "    private ProductService productService;",
+                "",
+                "    @Autowired",
+                "    private CustomerService customerService;",
+                "",
+                "    @Autowired",
+                "    private SaleService saleService;",
+                "",
+                "    @BeforeEach",
+                "    void setUp() {",
+                "        productService.clear();",
+                "        customerService.clear();",
+                "        saleService.clear();",
+                "    }",
+                "",
+                "    @Test",
+                "    void productAndCustomerEndpointsWork() throws Exception {",
+                '        mockMvc.perform(get("/products"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(content().json("[]"));',
+                "",
+                '        mockMvc.perform(post("/products")',
+                "                        .contentType(MediaType.APPLICATION_JSON)",
+                '                        .content("{\\"name\\":\\"Dragon\\",'
+                '\\"unitPrice\\":12.5}"))',
+                "                .andExpect(status().isCreated())",
+                '                .andExpect(jsonPath("$.id").value(1))',
+                '                .andExpect(jsonPath("$.name").value("Dragon"));',
+                "",
+                '        mockMvc.perform(post("/customers")',
+                "                        .contentType(MediaType.APPLICATION_JSON)",
+                '                        .content("{\\"name\\":\\"Ada\\",'
+                '\\"email\\":\\"ada@example.com\\"}"))',
+                "                .andExpect(status().isCreated())",
+                '                .andExpect(jsonPath("$.id").value(1))',
+                '                .andExpect(jsonPath("$.email").value("ada@example.com"));',
+                "    }",
+                "",
+                "    @Test",
+                "    void salesAndMonthlySummaryWork() throws Exception {",
+                '        String sale = """',
+                "                {",
+                '                  "customerId": 1,',
+                '                  "saleDate": "2026-05-31",',
+                '                  "items": [',
+                '                    {"productId": 1, "quantity": 2, "unitPrice": 10.0}',
+                "                  ],",
+                '                  "paymentStatus": "PAID",',
+                '                  "total": 0',
+                "                }",
+                '                """;',
+                "",
+                '        mockMvc.perform(post("/sales")',
+                "                        .contentType(MediaType.APPLICATION_JSON)",
+                "                        .content(sale))",
+                "                .andExpect(status().isCreated())",
+                '                .andExpect(jsonPath("$.id").value(1))',
+                '                .andExpect(jsonPath("$.paymentStatus").value("PAID"))',
+                '                .andExpect(jsonPath("$.total").value(20.0));',
+                "",
+                '        mockMvc.perform(get("/sales"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(jsonPath("$[0].id").value(1));',
+                "",
+                '        mockMvc.perform(get("/sales/monthly-summary"))',
+                "                .andExpect(status().isOk())",
+                '                .andExpect(jsonPath("$.2026-05").value(20.0));',
+                "    }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_backend_readme_content(self) -> str:
+        """Return README for the sales backend MVP."""
+        return "\n".join(
+            [
+                "# 3D Print Sales Backend",
+                "",
+                "Backend Spring Boot 3 para registrar ventas de impresion 3D.",
+                "",
+                "## Entidades",
+                "",
+                "- Product",
+                "- Customer",
+                "- Sale",
+                "- SaleItem",
+                "- PaymentStatus",
+                "",
+                "## Endpoints",
+                "",
+                "- `GET /products`",
+                "- `POST /products`",
+                "- `GET /customers`",
+                "- `POST /customers`",
+                "- `GET /sales`",
+                "- `POST /sales`",
+                "- `GET /sales/monthly-summary`",
+                "",
+                "## Restricciones",
+                "",
+                "Usa almacenamiento in-memory. No incluye DB, Angular, auth ni Docker.",
+                "",
+                "## Tests",
+                "",
+                "Ejecuta `mvn test` dentro del workspace.",
+                "",
+            ]
+        )
 
     def _spring_boot_pom_content(self, description: str = "Minimal Spring Boot health API") -> str:
         """Return a stable Spring Boot 3 Maven pom."""

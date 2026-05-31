@@ -46,7 +46,16 @@ GOAL_SUBMITTED
 
 Para objetivos vagos no se pregunta al usuario todavia: se asume un MVP razonable. Por ejemplo, "Hazme una web para registrar mis ventas de impresion 3D" genera entidades `Product`, `Customer`, `Sale`, `SaleItem` y `Payment`, pantallas como `Dashboard`, `Products`, `Customers`, `Sales` y `New Sale`, y validaciones como `quantity > 0` y `payment status required`.
 
-Esta fase no genera todavia una aplicacion fullstack completa para specs genericas; solo prepara la especificacion y la integra con el planner.
+Cuando esa spec de ventas esta disponible, el planner activa un baseline backend Spring Boot MVP. Por ahora genera solo backend:
+
+- entidades `Product`, `Customer`, `Sale`, `SaleItem` y `PaymentStatus`;
+- servicios in-memory;
+- controllers para `GET/POST /products`, `GET/POST /customers`, `GET/POST /sales`;
+- endpoint `GET /sales/monthly-summary`;
+- tests basicos `MockMvc`;
+- README del backend.
+
+La validacion real usa `mvn test` si se ejecuta con `--allow-execution`. Esta fase no genera todavia Angular, autenticacion, base de datos, Docker ni una aplicacion SaaS completa.
 
 ## Requisitos
 

@@ -140,6 +140,8 @@ class ReviewerAgent(BaseAgent):
         """Return actionable feedback for a generated multi-file project."""
         if "angular.json" in files:
             return self._angular_feedback(files)
+        if "src/main/java/com/example/demo/sales/SaleController.java" in files:
+            return self._spring_boot_sales_feedback(files)
         if "src/main/java/com/example/demo/user/UserController.java" in files:
             return self._spring_boot_user_crud_feedback(files)
         if "pom.xml" in files:
@@ -171,6 +173,60 @@ class ReviewerAgent(BaseAgent):
             feedback.append("app.component.ts debe declarar un componente standalone.")
         if "Angular Works" not in template:
             feedback.append("app.component.html debe mostrar Angular Works.")
+        return feedback
+
+    def _spring_boot_sales_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for the sales backend ProjectSpec baseline."""
+        feedback = self._spring_boot_common_feedback(files)
+        product = files.get("src/main/java/com/example/demo/sales/Product.java", "")
+        customer = files.get("src/main/java/com/example/demo/sales/Customer.java", "")
+        sale = files.get("src/main/java/com/example/demo/sales/Sale.java", "")
+        sale_item = files.get("src/main/java/com/example/demo/sales/SaleItem.java", "")
+        payment_status = files.get("src/main/java/com/example/demo/sales/PaymentStatus.java", "")
+        product_controller = files.get(
+            "src/main/java/com/example/demo/sales/ProductController.java", ""
+        )
+        customer_controller = files.get(
+            "src/main/java/com/example/demo/sales/CustomerController.java", ""
+        )
+        sale_controller = files.get("src/main/java/com/example/demo/sales/SaleController.java", "")
+        sale_service = files.get("src/main/java/com/example/demo/sales/SaleService.java", "")
+        tests = files.get("src/test/java/com/example/demo/sales/SalesBackendTest.java", "")
+        readme = files.get("README.md", "")
+        for name, content in {
+            "Product": product,
+            "Customer": customer,
+            "Sale": sale,
+            "SaleItem": sale_item,
+        }.items():
+            if f"record {name}" not in content:
+                feedback.append(f"{name}.java debe definir el record {name}.")
+        if "enum PaymentStatus" not in payment_status:
+            feedback.append("PaymentStatus.java debe definir el enum de pago.")
+        for route, controller in {
+            "/products": product_controller,
+            "/customers": customer_controller,
+            "/sales": sale_controller,
+        }.items():
+            if f'@RequestMapping("{route}")' not in controller:
+                feedback.append(f"El controller de {route} debe exponer {route}.")
+            if "@GetMapping" not in controller or "@PostMapping" not in controller:
+                feedback.append(f"El controller de {route} debe tener GET y POST.")
+        if '"/monthly-summary"' not in sale_controller or "monthlySummary" not in sale_service:
+            feedback.append("Sales debe exponer y calcular resumen mensual.")
+        for expectation in (
+            'get("/products")',
+            'post("/products")',
+            'post("/customers")',
+            'post("/sales")',
+            'get("/sales")',
+            'get("/sales/monthly-summary")',
+        ):
+            if expectation not in tests:
+                feedback.append("SalesBackendTest.java debe cubrir endpoints principales.")
+                break
+        if "/sales/monthly-summary" not in readme:
+            feedback.append("README.md debe documentar el resumen mensual de ventas.")
         return feedback
 
     def _spring_boot_user_crud_feedback(self, files: dict[str, str]) -> list[str]:

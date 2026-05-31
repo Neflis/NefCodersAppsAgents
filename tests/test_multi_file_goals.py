@@ -4,6 +4,7 @@ from multi_agent_lab.agents.reviewer_agent import ReviewerAgent
 from multi_agent_lab.core.file_awareness import FileAwarenessService
 from multi_agent_lab.core.workspace_manager import WorkspaceManager
 from multi_agent_lab.runtime import AgentRuntime
+from multi_agent_lab.tools.command_tool import CommandExecutionResult
 from multi_agent_lab.tools.file_tool import FileTool
 
 
@@ -343,6 +344,134 @@ async def test_spring_boot_user_crud_mock_workflow_completes(tmp_path: Path) -> 
 
     assert summary.status == "completed"
     assert "src/main/java/com/example/demo/user/UserController.java" in summary.files_created
+
+
+async def test_sales_project_spec_generates_backend_baseline(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=15,
+    )
+
+    summary = await runtime.run()
+
+    expected_files = {
+        "pom.xml",
+        "README.md",
+        "src/main/java/com/example/demo/DemoApplication.java",
+        "src/main/java/com/example/demo/sales/Product.java",
+        "src/main/java/com/example/demo/sales/Customer.java",
+        "src/main/java/com/example/demo/sales/Sale.java",
+        "src/main/java/com/example/demo/sales/SaleItem.java",
+        "src/main/java/com/example/demo/sales/PaymentStatus.java",
+        "src/main/java/com/example/demo/sales/ProductController.java",
+        "src/main/java/com/example/demo/sales/CustomerController.java",
+        "src/main/java/com/example/demo/sales/SaleController.java",
+        "src/main/java/com/example/demo/sales/ProductService.java",
+        "src/main/java/com/example/demo/sales/CustomerService.java",
+        "src/main/java/com/example/demo/sales/SaleService.java",
+        "src/test/java/com/example/demo/sales/SalesBackendTest.java",
+    }
+    assert summary.status == "completed"
+    assert summary.spec_generated is True
+    assert expected_files.issubset(set(summary.files_created))
+    assert (workspace / ".spec" / "project_spec.json").exists()
+
+
+async def test_sales_backend_contains_expected_entities_and_endpoints(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=15,
+    )
+
+    await runtime.run()
+
+    product = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "sales" / "Product.java"
+    ).read_text(encoding="utf-8")
+    customer = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "sales" / "Customer.java"
+    ).read_text(encoding="utf-8")
+    sale = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "sales" / "Sale.java"
+    ).read_text(encoding="utf-8")
+    sale_item = (
+        workspace / "src" / "main" / "java" / "com" / "example" / "demo" / "sales" / "SaleItem.java"
+    ).read_text(encoding="utf-8")
+    payment_status = (
+        workspace
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "sales"
+        / "PaymentStatus.java"
+    ).read_text(encoding="utf-8")
+    sale_controller = (
+        workspace
+        / "src"
+        / "main"
+        / "java"
+        / "com"
+        / "example"
+        / "demo"
+        / "sales"
+        / "SaleController.java"
+    ).read_text(encoding="utf-8")
+    assert "record Product" in product
+    assert "record Customer" in customer
+    assert "record Sale(" in sale
+    assert "record SaleItem" in sale_item
+    assert "enum PaymentStatus" in payment_status
+    assert '@RequestMapping("/sales")' in sale_controller
+    assert '@GetMapping("/monthly-summary")' in sale_controller
+
+
+async def test_sales_backend_mvn_test_runs_with_execution(tmp_path: Path, monkeypatch) -> None:
+    class FakeCommandTool:
+        calls: list[tuple[str, list[str]]] = []
+
+        def __init__(self, workspace, timeout_seconds=10.0) -> None:  # noqa: ANN001
+            self.workspace = workspace
+
+        def run_pytest(self, args=None):  # noqa: ANN001
+            raise AssertionError("Sales backend must use mvn test.")
+
+        def run_command(self, command_id, args):  # noqa: ANN001
+            self.calls.append((command_id, list(args)))
+            return CommandExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout="mvn test ok",
+                stderr="",
+                duration=0.0,
+            )
+
+    monkeypatch.setattr("multi_agent_lab.runtime.CommandTool", FakeCommandTool)
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=30,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert summary.execution_success_count == 1
+    assert summary.execution_failure_count == 0
+    assert FakeCommandTool.calls == [("mvn", ["test"])]
 
 
 async def test_angular_minimal_mock_generates_stable_baseline(tmp_path: Path) -> None:
