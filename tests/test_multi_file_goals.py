@@ -349,7 +349,7 @@ async def test_spring_boot_user_crud_mock_workflow_completes(tmp_path: Path) -> 
 async def test_sales_project_spec_generates_backend_baseline(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     runtime = AgentRuntime(
-        "Hazme una web para registrar mis ventas de impresion 3D",
+        "Hazme un backend para registrar mis ventas de impresion 3D",
         workspace_path=str(workspace),
         database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
         use_mock_llm=True,
@@ -384,7 +384,7 @@ async def test_sales_project_spec_generates_backend_baseline(tmp_path: Path) -> 
 async def test_sales_backend_contains_expected_entities_and_endpoints(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     runtime = AgentRuntime(
-        "Hazme una web para registrar mis ventas de impresion 3D",
+        "Hazme un backend para registrar mis ventas de impresion 3D",
         workspace_path=str(workspace),
         database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
         use_mock_llm=True,
@@ -458,7 +458,7 @@ async def test_sales_backend_mvn_test_runs_with_execution(tmp_path: Path, monkey
 
     monkeypatch.setattr("multi_agent_lab.runtime.CommandTool", FakeCommandTool)
     runtime = AgentRuntime(
-        "Hazme una web para registrar mis ventas de impresion 3D",
+        "Hazme un backend para registrar mis ventas de impresion 3D",
         workspace_path=str(tmp_path / "workspace"),
         database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
         use_mock_llm=True,
@@ -472,6 +472,109 @@ async def test_sales_backend_mvn_test_runs_with_execution(tmp_path: Path, monkey
     assert summary.execution_success_count == 1
     assert summary.execution_failure_count == 0
     assert FakeCommandTool.calls == [("mvn", ["test"])]
+
+
+async def test_sales_project_spec_generates_angular_frontend(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=15,
+    )
+
+    summary = await runtime.run()
+
+    expected_files = {
+        "package.json",
+        "angular.json",
+        "tsconfig.json",
+        "src/main.ts",
+        "src/app/app.routes.ts",
+        "src/app/app.component.ts",
+        "src/app/app.component.html",
+        "src/app/dashboard.component.ts",
+        "src/app/dashboard.component.html",
+        "src/app/products.component.ts",
+        "src/app/products.component.html",
+        "src/app/customers.component.ts",
+        "src/app/customers.component.html",
+        "src/app/sales.component.ts",
+        "src/app/sales.component.html",
+        "src/app/new-sale.component.ts",
+        "src/app/new-sale.component.html",
+        "README.md",
+    }
+    assert summary.status == "completed"
+    assert summary.spec_generated is True
+    assert expected_files.issubset(set(summary.files_created))
+    assert "pom.xml" not in summary.files_created
+
+
+async def test_sales_angular_frontend_contains_routing_and_screens(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(workspace),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=15,
+    )
+
+    await runtime.run()
+
+    routes = (workspace / "src" / "app" / "app.routes.ts").read_text(encoding="utf-8")
+    app_template = (workspace / "src" / "app" / "app.component.html").read_text(encoding="utf-8")
+    dashboard = (workspace / "src" / "app" / "dashboard.component.ts").read_text(encoding="utf-8")
+    products = (workspace / "src" / "app" / "products.component.html").read_text(encoding="utf-8")
+    new_sale = (workspace / "src" / "app" / "new-sale.component.html").read_text(encoding="utf-8")
+    assert "DashboardComponent" in routes
+    assert "ProductsComponent" in routes
+    assert "CustomersComponent" in routes
+    assert "SalesComponent" in routes
+    assert "NewSaleComponent" in routes
+    assert "routerLink" in app_template
+    assert "totalSales" in dashboard
+    assert "*ngFor" in products
+    assert "[(ngModel)]" in new_sale
+
+
+async def test_sales_angular_npm_build_runs_with_execution(tmp_path: Path, monkeypatch) -> None:
+    class FakeCommandTool:
+        calls: list[tuple[str, list[str]]] = []
+
+        def __init__(self, workspace, timeout_seconds=10.0) -> None:  # noqa: ANN001
+            self.workspace = workspace
+
+        def run_pytest(self, args=None):  # noqa: ANN001
+            raise AssertionError("Sales frontend must use npm.")
+
+        def run_command(self, command_id, args):  # noqa: ANN001
+            self.calls.append((command_id, list(args)))
+            return CommandExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout="npm ok",
+                stderr="",
+                duration=0.0,
+            )
+
+    monkeypatch.setattr("multi_agent_lab.runtime.CommandTool", FakeCommandTool)
+    runtime = AgentRuntime(
+        "Hazme una web para registrar mis ventas de impresion 3D",
+        workspace_path=str(tmp_path / "workspace"),
+        database_url=f"sqlite:///{tmp_path / 'runtime.db'}",
+        use_mock_llm=True,
+        timeout_seconds=30,
+        allow_execution=True,
+    )
+
+    summary = await runtime.run()
+
+    assert summary.status == "completed"
+    assert summary.terminal_event == "WORKFLOW_COMPLETED"
+    assert FakeCommandTool.calls == [("npm", ["install"]), ("npm", ["run", "build"])]
 
 
 async def test_angular_minimal_mock_generates_stable_baseline(tmp_path: Path) -> None:

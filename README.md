@@ -46,7 +46,18 @@ GOAL_SUBMITTED
 
 Para objetivos vagos no se pregunta al usuario todavia: se asume un MVP razonable. Por ejemplo, "Hazme una web para registrar mis ventas de impresion 3D" genera entidades `Product`, `Customer`, `Sale`, `SaleItem` y `Payment`, pantallas como `Dashboard`, `Products`, `Customers`, `Sales` y `New Sale`, y validaciones como `quantity > 0` y `payment status required`.
 
-Cuando esa spec de ventas esta disponible, el planner activa un baseline backend Spring Boot MVP. Por ahora genera solo backend:
+Cuando esa spec de ventas viene de un objetivo de tipo web, el planner activa un baseline frontend Angular standalone. Genera:
+
+- `DashboardComponent` con totales mock de ventas, clientes y productos;
+- `ProductsComponent`, `CustomersComponent` y `SalesComponent` con tablas mock;
+- `NewSaleComponent` con formulario mock;
+- routing en `src/app/app.routes.ts`;
+- navegacion entre pantallas en `AppComponent`;
+- README del frontend.
+
+La validacion real usa `npm install` y `npm run build` si se ejecuta con `--allow-execution`. Esta fase no genera backend, autenticacion, Docker ni llamadas HTTP.
+
+Si el objetivo pide explicitamente backend o API para esa misma spec, el planner conserva el baseline Spring Boot MVP:
 
 - entidades `Product`, `Customer`, `Sale`, `SaleItem` y `PaymentStatus`;
 - servicios in-memory;
@@ -55,7 +66,7 @@ Cuando esa spec de ventas esta disponible, el planner activa un baseline backend
 - tests basicos `MockMvc`;
 - README del backend.
 
-La validacion real usa `mvn test` si se ejecuta con `--allow-execution`. Esta fase no genera todavia Angular, autenticacion, base de datos, Docker ni una aplicacion SaaS completa.
+La validacion backend usa `mvn test` si se ejecuta con `--allow-execution`.
 
 ## Requisitos
 

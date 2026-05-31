@@ -138,6 +138,8 @@ class ReviewerAgent(BaseAgent):
 
     def _project_feedback(self, files: dict[str, str]) -> list[str]:
         """Return actionable feedback for a generated multi-file project."""
+        if "src/app/app.routes.ts" in files:
+            return self._sales_angular_feedback(files)
         if "angular.json" in files:
             return self._angular_feedback(files)
         if "src/main/java/com/example/demo/sales/SaleController.java" in files:
@@ -173,6 +175,43 @@ class ReviewerAgent(BaseAgent):
             feedback.append("app.component.ts debe declarar un componente standalone.")
         if "Angular Works" not in template:
             feedback.append("app.component.html debe mostrar Angular Works.")
+        return feedback
+
+    def _sales_angular_feedback(self, files: dict[str, str]) -> list[str]:
+        """Return actionable feedback for the sales Angular frontend."""
+        feedback: list[str] = []
+        package_json = files.get("package.json", "")
+        angular_json = files.get("angular.json", "")
+        main = files.get("src/main.ts", "")
+        app = files.get("src/app/app.component.ts", "")
+        template = files.get("src/app/app.component.html", "")
+        routes = files.get("src/app/app.routes.ts", "")
+        expected_components = {
+            "DashboardComponent": "src/app/dashboard.component.ts",
+            "ProductsComponent": "src/app/products.component.ts",
+            "CustomersComponent": "src/app/customers.component.ts",
+            "SalesComponent": "src/app/sales.component.ts",
+            "NewSaleComponent": "src/app/new-sale.component.ts",
+        }
+        if "@angular/router" not in package_json or "@angular/forms" not in package_json:
+            feedback.append("package.json debe incluir router y forms de Angular.")
+        if "sales-frontend" not in angular_json:
+            feedback.append("angular.json debe definir sales-frontend.")
+        if "provideRouter(routes)" not in main:
+            feedback.append("src/main.ts debe configurar routing.")
+        if "RouterOutlet" not in app or "RouterLink" not in app:
+            feedback.append("AppComponent debe importar RouterOutlet y RouterLink.")
+        for label in ("Dashboard", "Products", "Customers", "Sales", "New Sale"):
+            if label not in template:
+                feedback.append("app.component.html debe tener navegacion entre pantallas.")
+                break
+        for component_name, path in expected_components.items():
+            if component_name not in files.get(path, ""):
+                feedback.append(f"{path} debe definir {component_name}.")
+            if component_name not in routes:
+                feedback.append(f"app.routes.ts debe enrutar {component_name}.")
+        if "mock" not in files.get("README.md", "").lower():
+            feedback.append("README.md debe indicar que usa datos mock locales.")
         return feedback
 
     def _spring_boot_sales_feedback(self, files: dict[str, str]) -> list[str]:

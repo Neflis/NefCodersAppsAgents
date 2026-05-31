@@ -270,6 +270,24 @@ class CoderAgent(BaseAgent):
             "sales_backend_sale_controller",
             "sales_backend_test",
             "sales_backend_readme",
+            "sales_frontend_package_json",
+            "sales_frontend_angular_json",
+            "sales_frontend_tsconfig",
+            "sales_frontend_main",
+            "sales_frontend_routes",
+            "sales_frontend_app_component",
+            "sales_frontend_app_template",
+            "sales_frontend_dashboard_component",
+            "sales_frontend_dashboard_template",
+            "sales_frontend_products_component",
+            "sales_frontend_products_template",
+            "sales_frontend_customers_component",
+            "sales_frontend_customers_template",
+            "sales_frontend_sales_component",
+            "sales_frontend_sales_template",
+            "sales_frontend_new_sale_component",
+            "sales_frontend_new_sale_template",
+            "sales_frontend_readme",
         }
         return target_path in flask_files | cli_files or artifact in stable_artifacts
 
@@ -553,6 +571,42 @@ class CoderAgent(BaseAgent):
             return self._sales_backend_test_content()
         if artifact == "sales_backend_readme":
             return self._sales_backend_readme_content()
+        if artifact == "sales_frontend_package_json":
+            return self._sales_frontend_package_json_content()
+        if artifact == "sales_frontend_angular_json":
+            return self._sales_frontend_angular_json_content()
+        if artifact == "sales_frontend_tsconfig":
+            return self._angular_tsconfig_content()
+        if artifact == "sales_frontend_main":
+            return self._sales_frontend_main_content()
+        if artifact == "sales_frontend_routes":
+            return self._sales_frontend_routes_content()
+        if artifact == "sales_frontend_app_component":
+            return self._sales_frontend_app_component_content()
+        if artifact == "sales_frontend_app_template":
+            return self._sales_frontend_app_template_content()
+        if artifact == "sales_frontend_dashboard_component":
+            return self._sales_frontend_dashboard_component_content()
+        if artifact == "sales_frontend_dashboard_template":
+            return self._sales_frontend_dashboard_template_content()
+        if artifact == "sales_frontend_products_component":
+            return self._sales_frontend_products_component_content()
+        if artifact == "sales_frontend_products_template":
+            return self._sales_frontend_products_template_content()
+        if artifact == "sales_frontend_customers_component":
+            return self._sales_frontend_customers_component_content()
+        if artifact == "sales_frontend_customers_template":
+            return self._sales_frontend_customers_template_content()
+        if artifact == "sales_frontend_sales_component":
+            return self._sales_frontend_sales_component_content()
+        if artifact == "sales_frontend_sales_template":
+            return self._sales_frontend_sales_template_content()
+        if artifact == "sales_frontend_new_sale_component":
+            return self._sales_frontend_new_sale_component_content()
+        if artifact == "sales_frontend_new_sale_template":
+            return self._sales_frontend_new_sale_template_content()
+        if artifact == "sales_frontend_readme":
+            return self._sales_frontend_readme_content()
         if artifact == "angular_package_json" or target_path == "package.json":
             return self._angular_package_json_content()
         if artifact == "angular_json" or target_path == "angular.json":
@@ -931,6 +985,447 @@ class CoderAgent(BaseAgent):
     def _angular_template_content(self) -> str:
         """Return the minimal Angular component template."""
         return "<h1>Angular Works</h1>\n"
+
+    def _sales_frontend_package_json_content(self) -> str:
+        """Return Angular package manifest for the sales frontend."""
+        return "\n".join(
+            [
+                "{",
+                '  "scripts": {',
+                '    "build": "ngc -p tsconfig.json"',
+                "  },",
+                '  "dependencies": {',
+                '    "@angular/animations": "^17.3.0",',
+                '    "@angular/common": "^17.3.0",',
+                '    "@angular/compiler": "^17.3.0",',
+                '    "@angular/core": "^17.3.0",',
+                '    "@angular/forms": "^17.3.0",',
+                '    "@angular/platform-browser": "^17.3.0",',
+                '    "@angular/router": "^17.3.0",',
+                '    "rxjs": "^7.8.1",',
+                '    "tslib": "^2.6.2",',
+                '    "zone.js": "^0.14.4"',
+                "  },",
+                '  "devDependencies": {',
+                '    "@angular-devkit/build-angular": "^17.3.0",',
+                '    "@angular/cli": "^17.3.0",',
+                '    "@angular/compiler-cli": "^17.3.0",',
+                '    "typescript": "~5.4.5"',
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_angular_json_content(self) -> str:
+        """Return Angular workspace configuration for the sales frontend."""
+        return "\n".join(
+            [
+                "{",
+                '  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",',
+                '  "version": 1,',
+                '  "newProjectRoot": "projects",',
+                '  "projects": {',
+                '    "sales-frontend": {',
+                '      "projectType": "application",',
+                '      "root": "",',
+                '      "sourceRoot": "src",',
+                '      "prefix": "app",',
+                '      "architect": {',
+                '        "build": {',
+                '          "builder": "@angular-devkit/build-angular:application",',
+                '          "options": {',
+                '            "outputPath": "dist/sales-frontend",',
+                '            "index": false,',
+                '            "browser": "src/main.ts",',
+                '            "tsConfig": "tsconfig.json",',
+                '            "assets": [],',
+                '            "styles": []',
+                "          }",
+                "        }",
+                "      }",
+                "    }",
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_main_content(self) -> str:
+        """Return Angular bootstrap with router providers."""
+        return "\n".join(
+            [
+                "import { bootstrapApplication } from '@angular/platform-browser';",
+                "import { provideRouter } from '@angular/router';",
+                "import { AppComponent } from './app/app.component';",
+                "import { routes } from './app/app.routes';",
+                "",
+                "bootstrapApplication(AppComponent, {",
+                "  providers: [provideRouter(routes)],",
+                "}).catch((error) => console.error(error));",
+                "",
+            ]
+        )
+
+    def _sales_frontend_routes_content(self) -> str:
+        """Return routes for all sales frontend screens."""
+        return "\n".join(
+            [
+                "import { Routes } from '@angular/router';",
+                "import { CustomersComponent } from './customers.component';",
+                "import { DashboardComponent } from './dashboard.component';",
+                "import { NewSaleComponent } from './new-sale.component';",
+                "import { ProductsComponent } from './products.component';",
+                "import { SalesComponent } from './sales.component';",
+                "",
+                "export const routes: Routes = [",
+                "  { path: '', component: DashboardComponent },",
+                "  { path: 'products', component: ProductsComponent },",
+                "  { path: 'customers', component: CustomersComponent },",
+                "  { path: 'sales', component: SalesComponent },",
+                "  { path: 'new-sale', component: NewSaleComponent },",
+                "];",
+                "",
+            ]
+        )
+
+    def _sales_frontend_app_component_content(self) -> str:
+        """Return root app component with standalone routing imports."""
+        return "\n".join(
+            [
+                "import { Component } from '@angular/core';",
+                "import { RouterLink, RouterOutlet } from '@angular/router';",
+                "",
+                "@Component({",
+                "  selector: 'app-root',",
+                "  standalone: true,",
+                "  imports: [RouterLink, RouterOutlet],",
+                "  templateUrl: './app.component.html',",
+                "})",
+                "export class AppComponent {",
+                "  readonly title = '3D Print Sales';",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_app_template_content(self) -> str:
+        """Return root template with navigation."""
+        return "\n".join(
+            [
+                "<header>",
+                "  <h1>{{ title }}</h1>",
+                "  <nav>",
+                '    <a routerLink="/">Dashboard</a>',
+                '    <a routerLink="/products">Products</a>',
+                '    <a routerLink="/customers">Customers</a>',
+                '    <a routerLink="/sales">Sales</a>',
+                '    <a routerLink="/new-sale">New Sale</a>',
+                "  </nav>",
+                "</header>",
+                "<main>",
+                "  <router-outlet />",
+                "</main>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_dashboard_component_content(self) -> str:
+        """Return dashboard screen with local totals."""
+        return "\n".join(
+            [
+                "import { Component } from '@angular/core';",
+                "",
+                "@Component({",
+                "  selector: 'app-dashboard',",
+                "  standalone: true,",
+                "  templateUrl: './dashboard.component.html',",
+                "})",
+                "export class DashboardComponent {",
+                "  readonly totalSales = 3;",
+                "  readonly totalCustomers = 2;",
+                "  readonly totalProducts = 4;",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_dashboard_template_content(self) -> str:
+        """Return dashboard template."""
+        return "\n".join(
+            [
+                "<section>",
+                "  <h2>Dashboard</h2>",
+                "  <div>",
+                "    <p>Total ventas: {{ totalSales }}</p>",
+                "    <p>Total clientes: {{ totalCustomers }}</p>",
+                "    <p>Total productos: {{ totalProducts }}</p>",
+                "  </div>",
+                "</section>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_products_component_content(self) -> str:
+        """Return products screen with mock rows."""
+        return "\n".join(
+            [
+                "import { CommonModule } from '@angular/common';",
+                "import { Component } from '@angular/core';",
+                "",
+                "interface Product {",
+                "  id: number;",
+                "  name: string;",
+                "  unitPrice: number;",
+                "}",
+                "",
+                "@Component({",
+                "  selector: 'app-products',",
+                "  standalone: true,",
+                "  imports: [CommonModule],",
+                "  templateUrl: './products.component.html',",
+                "})",
+                "export class ProductsComponent {",
+                "  readonly products: Product[] = [",
+                "    { id: 1, name: 'Dragon articulado', unitPrice: 18.5 },",
+                "    { id: 2, name: 'Soporte mando', unitPrice: 12 },",
+                "    { id: 3, name: 'Maceta geometrica', unitPrice: 9.75 },",
+                "  ];",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_products_template_content(self) -> str:
+        """Return products table template."""
+        return "\n".join(
+            [
+                "<section>",
+                "  <h2>Products</h2>",
+                "  <table>",
+                "    <thead>",
+                "      <tr><th>ID</th><th>Producto</th><th>Precio</th></tr>",
+                "    </thead>",
+                "    <tbody>",
+                '      <tr *ngFor="let product of products">',
+                "        <td>{{ product.id }}</td>",
+                "        <td>{{ product.name }}</td>",
+                "        <td>{{ product.unitPrice | currency }}</td>",
+                "      </tr>",
+                "    </tbody>",
+                "  </table>",
+                "</section>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_customers_component_content(self) -> str:
+        """Return customers screen with mock rows."""
+        return "\n".join(
+            [
+                "import { CommonModule } from '@angular/common';",
+                "import { Component } from '@angular/core';",
+                "",
+                "interface Customer {",
+                "  id: number;",
+                "  name: string;",
+                "  email: string;",
+                "}",
+                "",
+                "@Component({",
+                "  selector: 'app-customers',",
+                "  standalone: true,",
+                "  imports: [CommonModule],",
+                "  templateUrl: './customers.component.html',",
+                "})",
+                "export class CustomersComponent {",
+                "  readonly customers: Customer[] = [",
+                "    { id: 1, name: 'Ada Lovelace', email: 'ada@example.com' },",
+                "    { id: 2, name: 'Grace Hopper', email: 'grace@example.com' },",
+                "  ];",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_customers_template_content(self) -> str:
+        """Return customers table template."""
+        return "\n".join(
+            [
+                "<section>",
+                "  <h2>Customers</h2>",
+                "  <table>",
+                "    <thead>",
+                "      <tr><th>ID</th><th>Cliente</th><th>Email</th></tr>",
+                "    </thead>",
+                "    <tbody>",
+                '      <tr *ngFor="let customer of customers">',
+                "        <td>{{ customer.id }}</td>",
+                "        <td>{{ customer.name }}</td>",
+                "        <td>{{ customer.email }}</td>",
+                "      </tr>",
+                "    </tbody>",
+                "  </table>",
+                "</section>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_sales_component_content(self) -> str:
+        """Return sales screen with mock rows."""
+        return "\n".join(
+            [
+                "import { CommonModule } from '@angular/common';",
+                "import { Component } from '@angular/core';",
+                "",
+                "interface Sale {",
+                "  id: number;",
+                "  date: string;",
+                "  customer: string;",
+                "  total: number;",
+                "  paymentStatus: 'PENDING' | 'PARTIAL' | 'PAID';",
+                "}",
+                "",
+                "@Component({",
+                "  selector: 'app-sales',",
+                "  standalone: true,",
+                "  imports: [CommonModule],",
+                "  templateUrl: './sales.component.html',",
+                "})",
+                "export class SalesComponent {",
+                "  readonly sales: Sale[] = [",
+                "    {",
+                "      id: 1,",
+                "      date: '2026-05-31',",
+                "      customer: 'Ada Lovelace',",
+                "      total: 31,",
+                "      paymentStatus: 'PAID',",
+                "    },",
+                "    {",
+                "      id: 2,",
+                "      date: '2026-06-01',",
+                "      customer: 'Venta mostrador',",
+                "      total: 12,",
+                "      paymentStatus: 'PENDING',",
+                "    },",
+                "  ];",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_sales_template_content(self) -> str:
+        """Return sales table template."""
+        return "\n".join(
+            [
+                "<section>",
+                "  <h2>Sales</h2>",
+                "  <table>",
+                "    <thead>",
+                "      <tr>",
+                "        <th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Pago</th>",
+                "      </tr>",
+                "    </thead>",
+                "    <tbody>",
+                '      <tr *ngFor="let sale of sales">',
+                "        <td>{{ sale.id }}</td>",
+                "        <td>{{ sale.date }}</td>",
+                "        <td>{{ sale.customer }}</td>",
+                "        <td>{{ sale.total | currency }}</td>",
+                "        <td>{{ sale.paymentStatus }}</td>",
+                "      </tr>",
+                "    </tbody>",
+                "  </table>",
+                "</section>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_new_sale_component_content(self) -> str:
+        """Return mock new sale form component."""
+        return "\n".join(
+            [
+                "import { CommonModule } from '@angular/common';",
+                "import { Component } from '@angular/core';",
+                "import { FormsModule } from '@angular/forms';",
+                "",
+                "@Component({",
+                "  selector: 'app-new-sale',",
+                "  standalone: true,",
+                "  imports: [CommonModule, FormsModule],",
+                "  templateUrl: './new-sale.component.html',",
+                "})",
+                "export class NewSaleComponent {",
+                "  productName = 'Dragon articulado';",
+                "  quantity = 1;",
+                "  paymentStatus = 'PENDING';",
+                "  saved = false;",
+                "",
+                "  save(): void {",
+                "    this.saved = true;",
+                "  }",
+                "}",
+                "",
+            ]
+        )
+
+    def _sales_frontend_new_sale_template_content(self) -> str:
+        """Return mock new sale form template."""
+        return "\n".join(
+            [
+                "<section>",
+                "  <h2>New Sale</h2>",
+                '  <form (ngSubmit)="save()">',
+                "    <label>",
+                "      Producto",
+                '      <input name="productName" [(ngModel)]="productName" />',
+                "    </label>",
+                "    <label>",
+                "      Cantidad",
+                '      <input name="quantity" type="number" [(ngModel)]="quantity" />',
+                "    </label>",
+                "    <label>",
+                "      Estado de pago",
+                '      <select name="paymentStatus" [(ngModel)]="paymentStatus">',
+                '        <option value="PENDING">PENDING</option>',
+                '        <option value="PARTIAL">PARTIAL</option>',
+                '        <option value="PAID">PAID</option>',
+                "      </select>",
+                "    </label>",
+                '    <button type="submit">Registrar venta</button>',
+                "  </form>",
+                '  <p *ngIf="saved">Venta mock registrada.</p>',
+                "</section>",
+                "",
+            ]
+        )
+
+    def _sales_frontend_readme_content(self) -> str:
+        """Return README for the Angular sales frontend."""
+        return "\n".join(
+            [
+                "# 3D Print Sales Frontend",
+                "",
+                "Frontend Angular standalone para registrar ventas de impresion 3D.",
+                "",
+                "## Pantallas",
+                "",
+                "- Dashboard",
+                "- Products",
+                "- Customers",
+                "- Sales",
+                "- New Sale",
+                "",
+                "## Datos",
+                "",
+                "Usa datos mock locales. No realiza llamadas HTTP.",
+                "",
+                "## Validacion",
+                "",
+                "Ejecuta `npm install` y despues `npm run build` dentro del workspace.",
+                "",
+            ]
+        )
 
     def _sales_payment_status_content(self) -> str:
         """Return payment status enum for the sales backend."""

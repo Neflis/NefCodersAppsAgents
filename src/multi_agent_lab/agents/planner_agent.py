@@ -99,7 +99,9 @@ class PlannerAgent(BaseAgent):
     ) -> TaskGraph:
         """Create the README demo graph."""
         graph = TaskGraph(Goal(self._goal_title(goal_title, project_spec), correlation_id))
-        if self._is_sales_backend_spec(project_spec):
+        if self._is_sales_frontend_spec(project_spec, goal_title):
+            return self._build_sales_frontend_graph(graph, allow_execution)
+        if self._is_sales_backend_spec(project_spec, goal_title):
             return self._build_sales_backend_graph(graph, allow_execution)
         if self._is_flask_api_goal(goal_title):
             return self._build_flask_api_graph(graph, allow_execution)
@@ -174,7 +176,7 @@ class PlannerAgent(BaseAgent):
             return goal_title
         return f"{project_spec.app_name}: {goal_title}"
 
-    def _is_sales_backend_spec(self, project_spec: ProjectSpec | None) -> bool:
+    def _is_sales_spec(self, project_spec: ProjectSpec | None) -> bool:
         """Return whether a spec describes the 3D printing sales MVP."""
         if project_spec is None:
             return False
@@ -183,6 +185,158 @@ class PlannerAgent(BaseAgent):
             "venta" in project_spec.domain_summary.lower()
             or "sales" in project_spec.app_name.lower()
         )
+
+    def _is_sales_frontend_spec(
+        self,
+        project_spec: ProjectSpec | None,
+        goal_title: str,
+    ) -> bool:
+        """Return whether a sales spec should become an Angular frontend."""
+        lowered = goal_title.lower()
+        return self._is_sales_spec(project_spec) and not ("backend" in lowered or "api" in lowered)
+
+    def _is_sales_backend_spec(
+        self,
+        project_spec: ProjectSpec | None,
+        goal_title: str,
+    ) -> bool:
+        """Return whether a sales spec should become a Spring Boot backend."""
+        lowered = goal_title.lower()
+        return self._is_sales_spec(project_spec) and ("backend" in lowered or "api" in lowered)
+
+    def _build_sales_frontend_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
+        """Create a deterministic Angular frontend for the sales ProjectSpec."""
+        files = [
+            ("Crear package.json", "package.json", "sales_frontend_package_json"),
+            ("Crear angular.json", "angular.json", "sales_frontend_angular_json"),
+            ("Crear tsconfig.json", "tsconfig.json", "sales_frontend_tsconfig"),
+            ("Crear src/main.ts", "src/main.ts", "sales_frontend_main"),
+            (
+                "Crear app.routes.ts",
+                "src/app/app.routes.ts",
+                "sales_frontend_routes",
+            ),
+            (
+                "Crear app.component.ts",
+                "src/app/app.component.ts",
+                "sales_frontend_app_component",
+            ),
+            (
+                "Crear app.component.html",
+                "src/app/app.component.html",
+                "sales_frontend_app_template",
+            ),
+            (
+                "Crear DashboardComponent",
+                "src/app/dashboard.component.ts",
+                "sales_frontend_dashboard_component",
+            ),
+            (
+                "Crear dashboard.component.html",
+                "src/app/dashboard.component.html",
+                "sales_frontend_dashboard_template",
+            ),
+            (
+                "Crear ProductsComponent",
+                "src/app/products.component.ts",
+                "sales_frontend_products_component",
+            ),
+            (
+                "Crear products.component.html",
+                "src/app/products.component.html",
+                "sales_frontend_products_template",
+            ),
+            (
+                "Crear CustomersComponent",
+                "src/app/customers.component.ts",
+                "sales_frontend_customers_component",
+            ),
+            (
+                "Crear customers.component.html",
+                "src/app/customers.component.html",
+                "sales_frontend_customers_template",
+            ),
+            (
+                "Crear SalesComponent",
+                "src/app/sales.component.ts",
+                "sales_frontend_sales_component",
+            ),
+            (
+                "Crear sales.component.html",
+                "src/app/sales.component.html",
+                "sales_frontend_sales_template",
+            ),
+            (
+                "Crear NewSaleComponent",
+                "src/app/new-sale.component.ts",
+                "sales_frontend_new_sale_component",
+            ),
+            (
+                "Crear new-sale.component.html",
+                "src/app/new-sale.component.html",
+                "sales_frontend_new_sale_template",
+            ),
+            ("Crear README.md", "README.md", "sales_frontend_readme"),
+        ]
+        previous_id: str | None = None
+        for index, (title, path, artifact) in enumerate(files):
+            task = graph.add_task(
+                TaskNode(
+                    title=title,
+                    description="Generar frontend Angular standalone basado en ProjectSpec.",
+                    required_capability=Capability.CODING.value,
+                    payload={"path": path, "artifact": artifact},
+                    dependencies={previous_id} if previous_id else set(),
+                    priority=30 - index,
+                )
+            )
+            previous_id = task.id
+
+        paths = [path for _, path, _ in files]
+        review = graph.add_task(
+            TaskNode(
+                title="Revisar frontend ventas Angular",
+                description="Validar routing, navegacion, componentes y datos mock.",
+                required_capability=Capability.REVIEWING.value,
+                payload={"project_review": True, "paths": paths},
+                dependencies={previous_id} if previous_id else set(),
+                priority=4,
+            )
+        )
+        if allow_execution:
+            install = graph.add_task(
+                TaskNode(
+                    title="Instalar dependencias npm",
+                    description="Ejecutar npm install dentro del workspace.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "npm", "args": ["install"]},
+                    dependencies={review.id},
+                    priority=3,
+                )
+            )
+            graph.add_task(
+                TaskNode(
+                    title="Compilar frontend Angular",
+                    description="Ejecutar npm run build dentro del workspace.",
+                    required_capability=Capability.TESTING_EXECUTION.value,
+                    payload={"command_id": "npm", "args": ["run", "build"]},
+                    dependencies={install.id},
+                    priority=2,
+                )
+            )
+            return graph
+
+        graph.add_task(
+            TaskNode(
+                title="Validar existencia frontend ventas",
+                description="Comprobar que los archivos Angular del frontend existen.",
+                required_capability=Capability.TESTING_MOCK.value,
+                payload={"paths": paths},
+                dependencies={review.id},
+                priority=3,
+            )
+        )
+        return graph
 
     def _build_sales_backend_graph(self, graph: TaskGraph, allow_execution: bool) -> TaskGraph:
         """Create a deterministic Spring Boot backend for the sales ProjectSpec."""
